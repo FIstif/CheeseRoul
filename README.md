@@ -9,7 +9,7 @@
 
 ### 📥 Скачать приложение
 
-[![Скачать APK](https://img.shields.io/badge/Скачать-Latest_APK-success?style=for-the-badge&logo=android)](https://github.com/FIstif/CheeseRoul/releases/download/latest/app-debug.apk)
+[![Скачать APK](https://img.shields.io/badge/Скачать-Latest_APK-success?style=for-the-badge&logo=android)](https://github.com/ТВОЙ_ЮЗЕРНЕЙМ/CheeseRoul/releases/download/latest/app-debug.apk)
 
 *Нажмите на кнопку выше, чтобы скачать последнюю версию игры прямо на ваш Android-смартфон.*
 
@@ -30,13 +30,13 @@
 > **Примечание:** Мы постоянно улучшаем приложение 🧀, так что реальный вид экранов может немного отличаться от того, что вы видите здесь.
 
 <div align="center">
-  <img src="screenshots/menu.png" width="1280" alt="Экран меню"/>
+  <img src="screenshots/menu.png" width="200" alt="Экран настроек"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="screenshots/options.png" width="1280" alt="Экран настроек"/>
+  <img src="screenshots/options.png" width="200" alt="Экран настроек"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="screenshots/game.png" width="1280" alt="Игровой экран"/>
+  <img src="screenshots/game.png" width="200" alt="Игровой экран"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="screenshots/history.png" width="1280" alt="Экран истории"/>
+  <img src="screenshots/history.png" width="200" alt="Экран истории"/>
 </div>
 
 ## 🚀 Как запустить проект
