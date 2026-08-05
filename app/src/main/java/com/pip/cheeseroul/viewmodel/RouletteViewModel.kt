@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import com.pip.cheeseroul.model.DisplayMode
+import com.pip.cheeseroul.model.EliminationEffect
 import com.pip.cheeseroul.model.GameStat
 import com.pip.cheeseroul.model.Player
 import com.pip.cheeseroul.model.SpinState
@@ -17,7 +18,6 @@ import kotlinx.coroutines.flow.update
 
 class RouletteViewModel(application: Application) : AndroidViewModel(application) {
 
-    // Локальная память для сохранения прогресса обучения
     private val prefs = application.getSharedPreferences("CheesePrefs", Context.MODE_PRIVATE)
 
     private val _tutorialStep = MutableStateFlow(
@@ -52,6 +52,10 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private val _fakeStopChance = MutableStateFlow(0.5f)
     val fakeStopChance: StateFlow<Float> = _fakeStopChance.asStateFlow()
 
+    // НОВОЕ: Состояние эффекта удаления
+    private val _eliminationEffect = MutableStateFlow(EliminationEffect.EXPLOSION)
+    val eliminationEffect: StateFlow<EliminationEffect> = _eliminationEffect.asStateFlow()
+
     private val _gameHistory = MutableStateFlow<List<GameStat>>(emptyList())
     val gameHistory: StateFlow<List<GameStat>> = _gameHistory.asStateFlow()
 
@@ -64,7 +68,6 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
         generatePlayers(_playerCount.value)
     }
 
-    // --- Методы управления обучением ---
     fun nextTutorialStep() {
         val next = when (_tutorialStep.value) {
             TutorialStep.SETUP_HINT -> TutorialStep.SPIN_HINT
@@ -84,7 +87,6 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putBoolean("isFirstRun", false).apply()
     }
 
-    // --- Игровая логика ---
     fun setDisplayMode(mode: DisplayMode) { _displayMode.value = mode }
 
     fun setPlayerCount(count: Int) {
@@ -115,6 +117,8 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     fun setVibrationEnabled(enabled: Boolean) { _isVibrationEnabled.value = enabled }
     fun setFakeStopEnabled(enabled: Boolean) { _isFakeStopEnabled.value = enabled }
     fun setFakeStopChance(chance: Float) { _fakeStopChance.value = chance }
+    // НОВОЕ: Функция переключения эффекта
+    fun setEliminationEffect(effect: EliminationEffect) { _eliminationEffect.value = effect }
 
     fun startGameSession() {
         initialPlayersSnapshot = _players.value

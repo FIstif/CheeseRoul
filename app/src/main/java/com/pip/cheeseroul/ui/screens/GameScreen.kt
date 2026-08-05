@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pip.cheeseroul.model.EliminationEffect
 import com.pip.cheeseroul.model.Player
 import com.pip.cheeseroul.model.SpinState
 import com.pip.cheeseroul.model.TutorialStep
@@ -58,6 +59,7 @@ fun GameScreen(
     val isVibrationEnabled by viewModel.isVibrationEnabled.collectAsState()
     val isFakeStopEnabled by viewModel.isFakeStopEnabled.collectAsState()
     val fakeStopChance by viewModel.fakeStopChance.collectAsState()
+    val eliminationEffect by viewModel.eliminationEffect.collectAsState()
     val tutorialStep by viewModel.tutorialStep.collectAsState()
 
     var highlightedIndex by remember { mutableIntStateOf(0) }
@@ -66,11 +68,54 @@ fun GameScreen(
     var showEliminateDialog by remember { mutableStateOf(false) }
     var playerToDelete by remember { mutableStateOf<Player?>(null) }
 
+    // НОВОЕ: Переменные для анимации
+    var animatingPlayer by remember { mutableStateOf<Player?>(null) }
+    var currentAnimEffect by remember { mutableStateOf(EliminationEffect.NONE) }
+    val eliminationProgress = remember { Animatable(0f) }
+
     val soundManager = remember { SoundManager(context) }
     val vibrationManager = remember { VibrationManager(context) }
+    val coroutineScope = rememberCoroutineScope()
 
     DisposableEffect(Unit) { onDispose { soundManager.release() } }
 
+    // Унифицированная функция удаления (с анимацией)
+    fun triggerElimination(targetPlayer: Player) {
+        coroutineScope.launch {
+            val resolvedEffect = if (eliminationEffect == EliminationEffect.RANDOM) {
+                listOf(EliminationEffect.EXPLOSION, EliminationEffect.FADE, EliminationEffect.SHRINK).random()
+            } else {
+                eliminationEffect
+            }
+
+            if (resolvedEffect == EliminationEffect.NONE) {
+                viewModel.removePlayer(targetPlayer)
+                highlightedIndex = 0
+                spinState = SpinState.IDLE
+                if (isSoundEnabled) soundManager.playJump()
+                if (isVibrationEnabled) vibrationManager.vibrateWin()
+            } else {
+                // Включаем режим анимации
+                animatingPlayer = targetPlayer
+                currentAnimEffect = resolvedEffect
+                eliminationProgress.snapTo(0f)
+
+                if (isSoundEnabled) soundManager.playJump()
+                if (isVibrationEnabled) vibrationManager.vibrateWin()
+
+                // Анимируем до 1f (длина анимации 700мс)
+                eliminationProgress.animateTo(1f, animationSpec = tween(700, easing = FastOutSlowInEasing))
+
+                // Только теперь удаляем по-настоящему
+                viewModel.removePlayer(targetPlayer)
+                animatingPlayer = null
+                highlightedIndex = 0
+                spinState = SpinState.IDLE
+            }
+        }
+    }
+
+    // Тряска смартфона для подтверждения удаления
     DisposableEffect(playerToDelete) {
         if (playerToDelete != null) {
             val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -89,13 +134,9 @@ fun GameScreen(
                         val now = System.currentTimeMillis()
                         if (now - lastShakeTime > 1000) {
                             lastShakeTime = now
-                            viewModel.removePlayer(playerToDelete!!)
-                            highlightedIndex = 0
-                            spinState = SpinState.IDLE
-
-                            if (isSoundEnabled) soundManager.playJump()
-                            if (isVibrationEnabled) vibrationManager.vibrateWin()
-                            playerToDelete = null
+                            val target = playerToDelete!!
+                            playerToDelete = null // Прячем окно
+                            triggerElimination(target) // Запускаем эпичный взрыв
                         }
                     }
                 }
@@ -108,7 +149,6 @@ fun GameScreen(
         }
     }
 
-    val coroutineScope = rememberCoroutineScope()
     var spinJob by remember { mutableStateOf<Job?>(null) }
     var isHardSpinning by remember { mutableStateOf(false) }
 
@@ -123,7 +163,6 @@ fun GameScreen(
             val startTime = System.currentTimeMillis()
             var currentInterval = if (isHard) 10L else 50L
 
-            // ИСПРАВЛЕНИЕ 1: Ждем, пока интервал не станет 800L (создаем долгую интригу)
             while (currentInterval < 800L) {
                 highlightedIndex = (highlightedIndex + 1) % players.size
                 if (isSoundEnabled) soundManager.playTick()
@@ -132,21 +171,18 @@ fun GameScreen(
 
                 val elapsed = System.currentTimeMillis() - startTime
                 val progress = (elapsed.toFloat() / totalDurationMs).coerceIn(0f, 1f)
-
-                // Используем кривую ease-out. Она быстро делает рулетку медленной,
-                // и она долго и тягуче докручивается в самом конце.
                 val easeOut = 1f - (1f - progress) * (1f - progress)
                 currentInterval = (50 + (easeOut * 800)).toLong()
             }
 
             if (isFakeStopEnabled && Random.nextFloat() <= fakeStopChance) {
                 spinState = SpinState.FAKE_STOP
-                delay(600L) // Пауза перед прыжком
+                delay(600L)
                 val jumpOffset = listOf(-2, -1, 1, 2).random()
                 highlightedIndex = (highlightedIndex + jumpOffset).mod(players.size)
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateJump()
-                delay(600L) // Пауза после прыжка, чтобы осознать подставу
+                delay(600L)
             }
 
             spinState = SpinState.STOPPED
@@ -159,9 +195,7 @@ fun GameScreen(
         }
     }
 
-    // Главный контейнер (Box на весь экран)
     Box(modifier = Modifier.fillMaxSize()) {
-
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -183,7 +217,6 @@ fun GameScreen(
         ) { innerPadding ->
 
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -195,6 +228,9 @@ fun GameScreen(
                         players = players,
                         displayMode = displayMode,
                         highlightedIndex = highlightedIndex,
+                        animatingPlayer = animatingPlayer,
+                        currentEffect = currentAnimEffect,
+                        eliminationProgress = eliminationProgress.value,
                         onSectorLongClick = { player ->
                             if (spinState != SpinState.SPINNING && spinState != SpinState.FAKE_STOP && players.size > 1) {
                                 playerToDelete = player
@@ -249,17 +285,13 @@ fun GameScreen(
                     }
                 }
             }
-        } // Конец Scaffold
+        }
 
-        // ИСПРАВЛЕНИЕ 2 и 3: Экран победителя ВЫНЕСЕН ИЗ Scaffold!
-        // Теперь он рисуется поверх всего экрана (включая верхнее меню).
         AnimatedVisibility(
-            visible = players.size == 1,
+            visible = players.size == 1 && animatingPlayer == null, // Ждем конца анимации перед победой
             enter = scaleIn(initialScale = 0.8f) + fadeIn(tween(500)),
             exit = fadeOut(tween(300))
         ) {
-            // ИСПРАВЛЕНИЕ 3: Запоминаем победителя (remember).
-            // Это предотвращает баг с "Игрок 1", когда ViewModel сбрасывает данные перед выходом!
             val finalWinner = remember { players.firstOrNull() } ?: return@AnimatedVisibility
 
             val infiniteTransition = rememberInfiniteTransition(label = "winPulse")
@@ -281,7 +313,6 @@ fun GameScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(finalWinner.color)
-                    // Блокируем клики по экрану! Никто ничего не нажмет, пока идет праздник.
                     .pointerInput(Unit) { detectTapGestures { } },
                 contentAlignment = Alignment.Center
             ) {
@@ -299,14 +330,15 @@ fun GameScreen(
             }
         }
 
-        // Модалки настроек и туториала (остаются поверх всего)
         if (showSettings) {
             SettingsModal(
                 isSoundEnabled = isSoundEnabled, isVibrationEnabled = isVibrationEnabled,
                 displayMode = displayMode, isFakeStopEnabled = isFakeStopEnabled, fakeStopChance = fakeStopChance,
+                eliminationEffect = eliminationEffect, // Передаем эффект
                 onSoundToggle = { viewModel.setSoundEnabled(it) }, onVibrationToggle = { viewModel.setVibrationEnabled(it) },
                 onFakeStopToggle = { viewModel.setFakeStopEnabled(it) }, onChanceChange = { viewModel.setFakeStopChance(it) },
                 onModeSelect = { viewModel.setDisplayMode(it) },
+                onEffectSelect = { viewModel.setEliminationEffect(it) }, // Сохраняем эффект
                 onExitToMenu = { showSettings = false; viewModel.restorePlayersAfterGame(); onBackToMenu() },
                 onDismiss = { showSettings = false }
             )
@@ -316,27 +348,17 @@ fun GameScreen(
             EliminateDialog(
                 players = players,
                 onPlayerEliminated = { player ->
-                    viewModel.removePlayer(player)
-                    highlightedIndex = 0
-                    spinState = SpinState.IDLE
                     showEliminateDialog = false
+                    triggerElimination(player) // Используем ту же анимацию для ручного удаления
                 },
                 onDismiss = { showEliminateDialog = false }
             )
         }
 
         if (tutorialStep == TutorialStep.SPIN_HINT) {
-            TutorialOverlay(
-                text = "Кликните на сыр в центре, чтобы запустить рулетку.\n\nУдерживайте кнопку сыра нажатой для мощного и долгого вращения!",
-                onNext = { viewModel.nextTutorialStep() },
-                onSkip = { viewModel.skipTutorial() }
-            )
+            TutorialOverlay(text = "Кликните на сыр в центре, чтобы запустить рулетку.\n\nУдерживайте кнопку сыра нажатой для мощного и долгого вращения!", onNext = { viewModel.nextTutorialStep() }, onSkip = { viewModel.skipTutorial() })
         } else if (tutorialStep == TutorialStep.DELETE_HINT) {
-            TutorialOverlay(
-                text = "Если кто-то выбыл — удерживайте палец на его секторе или нажмите на иконку флажка сверху, чтобы удалить его из игры.",
-                onNext = { viewModel.nextTutorialStep() },
-                onSkip = { viewModel.skipTutorial() }
-            )
+            TutorialOverlay(text = "Если кто-то выбыл — удерживайте палец на его секторе или нажмите на иконку флажка сверху, чтобы удалить его из игры.", onNext = { viewModel.nextTutorialStep() }, onSkip = { viewModel.skipTutorial() })
         }
     }
 }

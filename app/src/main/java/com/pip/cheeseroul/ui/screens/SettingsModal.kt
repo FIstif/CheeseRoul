@@ -1,10 +1,11 @@
 // ui/screens/SettingsModal.kt
 package com.pip.cheeseroul.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -14,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.pip.cheeseroul.model.DisplayMode
+import com.pip.cheeseroul.model.EliminationEffect
 import com.pip.cheeseroul.ui.theme.*
 import kotlin.math.roundToInt
 
@@ -24,14 +26,18 @@ fun SettingsModal(
     displayMode: DisplayMode,
     isFakeStopEnabled: Boolean,
     fakeStopChance: Float,
+    eliminationEffect: EliminationEffect, // НОВОЕ
     onSoundToggle: (Boolean) -> Unit,
     onVibrationToggle: (Boolean) -> Unit,
     onFakeStopToggle: (Boolean) -> Unit,
     onChanceChange: (Float) -> Unit,
     onModeSelect: (DisplayMode) -> Unit,
+    onEffectSelect: (EliminationEffect) -> Unit, // НОВОЕ
     onExitToMenu: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    var effectDropdownExpanded by remember { mutableStateOf(false) }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
@@ -59,20 +65,48 @@ fun SettingsModal(
                 HorizontalDivider(color = CheeseCardBg)
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Эффект выбывания
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Эффект выбывания", fontSize = 16.sp, color = CheeseBrown, fontWeight = FontWeight.Medium)
+                    Box {
+                        TextButton(onClick = { effectDropdownExpanded = true }) {
+                            Text(eliminationEffect.title, color = CheeseOrange, fontWeight = FontWeight.Bold)
+                        }
+                        DropdownMenu(
+                            expanded = effectDropdownExpanded,
+                            onDismissRequest = { effectDropdownExpanded = false },
+                            modifier = Modifier.background(CheeseBackground)
+                        ) {
+                            EliminationEffect.entries.forEach { effect ->
+                                DropdownMenuItem(
+                                    text = { Text(effect.title, color = CheeseBrown) },
+                                    onClick = {
+                                        onEffectSelect(effect)
+                                        effectDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(color = CheeseCardBg)
+                Spacer(modifier = Modifier.height(8.dp))
+
                 // Ложная остановка
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Ложная остановка", fontSize = 18.sp, color = CheeseBrown, fontWeight = FontWeight.Medium)
+                    Text("Ложная остановка", fontSize = 16.sp, color = CheeseBrown, fontWeight = FontWeight.Medium)
                     Switch(checked = isFakeStopEnabled, onCheckedChange = onFakeStopToggle, colors = SwitchDefaults.colors(checkedThumbColor = CheeseOrange))
                 }
 
-                // Слайдер частоты ложной остановки (показывается только если включено)
                 if (isFakeStopEnabled) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Шанс срабатывания: ${(fakeStopChance * 100).roundToInt()}%", fontSize = 14.sp, color = CheeseBrown)
                     Slider(
                         value = fakeStopChance,
                         onValueChange = onChanceChange,
-                        valueRange = 0.1f..1f, // От 10% до 100%
+                        valueRange = 0.1f..1f,
                         colors = SliderDefaults.colors(thumbColor = CheeseOrange, activeTrackColor = CheeseYellow)
                     )
                 }
@@ -113,7 +147,6 @@ fun SettingsModal(
                     Text("Закрыть", color = CheeseBrown)
                 }
 
-                // --- НОВОЕ: Указание авторства для лицензии CC BY 4.0 ---
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "Иконка приложения: Lima Studio (Icon-Icons.com) по лицензии CC BY 4.0",

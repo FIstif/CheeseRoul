@@ -1,7 +1,6 @@
 // ui/components/RouletteWheel.kt
 package com.pip.cheeseroul.ui.components
 
-import kotlin.math.min
 import android.graphics.Paint
 import android.graphics.Rect
 import androidx.compose.foundation.Canvas
@@ -19,9 +18,11 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.pip.cheeseroul.model.DisplayMode
+import com.pip.cheeseroul.model.EliminationEffect
 import com.pip.cheeseroul.model.Player
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -30,7 +31,10 @@ fun RouletteWheel(
     players: List<Player>,
     displayMode: DisplayMode,
     highlightedIndex: Int,
-    onSectorLongClick: (Player) -> Unit, // Новый колбек для долгого нажатия
+    animatingPlayer: Player? = null, // НОВОЕ: Игрок, которого мы прямо сейчас удаляем
+    currentEffect: EliminationEffect = EliminationEffect.NONE, // НОВОЕ: Текущий эффект
+    eliminationProgress: Float = 0f, // НОВОЕ: Прогресс анимации (от 0f до 1f)
+    onSectorLongClick: (Player) -> Unit,
     modifier: Modifier = Modifier,
     centerContent: @Composable () -> Unit
 ) {
@@ -44,35 +48,25 @@ fun RouletteWheel(
         Canvas(
             modifier = Modifier
                 .matchParentSize()
-                // Добавляем обработчик нажатий прямо на Canvas
                 .pointerInput(players.size) {
                     detectTapGestures(
                         onLongPress = { offset ->
                             if (players.isEmpty()) return@detectTapGestures
 
-                            val center = androidx.compose.ui.geometry.Offset(
-                                size.width / 2f,
-                                size.height / 2f
-                            )
+                            val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
                             val radius = min(size.width, size.height) / 2f
-                            val buttonRadius = 45.dp.toPx() // Исключаем зону центральной кнопки
+                            val buttonRadius = 45.dp.toPx()
 
                             val dx = offset.x - center.x
                             val dy = offset.y - center.y
                             val distance = sqrt(dx * dx + dy * dy)
 
-                            // Проверяем, что нажатие было на секторах, а не на кнопке или за пределами колеса
                             if (distance in buttonRadius..radius) {
-                                // Вычисляем угол нажатия (в градусах)
-                                val angle =
-                                    Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-                                // Приводим к нашей системе координат (0 градусов = 12 часов)
+                                val angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
                                 val normalizedAngle = (angle + 90f + 360f) % 360f
                                 val sweepAngle = 360f / players.size
 
-                                // Вычисляем индекс игрока
-                                val index = (normalizedAngle / sweepAngle).toInt()
-                                    .coerceIn(0, players.size - 1)
+                                val index = (normalizedAngle / sweepAngle).toInt().coerceIn(0, players.size - 1)
                                 onSectorLongClick(players[index])
                             }
                         }
@@ -84,27 +78,63 @@ fun RouletteWheel(
             val count = players.size
             val sweepAngle = 360f / count
             val radius = size.minDimension / 2f
-            val center = this.center
+            val canvasCenter = this.center
 
             players.forEachIndexed { index, player ->
                 val startAngle = index * sweepAngle - 90f
+                val isAnimating = player == animatingPlayer
+                val medianAngleRad = Math.toRadians((startAngle + sweepAngle / 2f).toDouble())
+
+                var alpha = 1f
+                var scale = 1f
+                var translateX = 0f
+                var translateY = 0f
+
+                // Применяем математику эффекта, если этот сектор удаляется
+                if (isAnimating) {
+                    when (currentEffect) {
+                        EliminationEffect.EXPLOSION -> {
+                            val flyDistance = eliminationProgress * radius * 0.6f
+                            translateX = flyDistance * cos(medianAngleRad).toFloat()
+                            translateY = flyDistance * sin(medianAngleRad).toFloat()
+                            scale = 1f + (eliminationProgress * 1.5f)
+                            alpha = 1f - (eliminationProgress * eliminationProgress)
+                        }
+                        EliminationEffect.FADE -> {
+                            alpha = 1f - eliminationProgress
+                        }
+                        EliminationEffect.SHRINK -> {
+                            scale = 1f - eliminationProgress
+                        }
+                        else -> {}
+                    }
+                }
+
+                drawContext.canvas.save()
+
+                // Сдвигаем, увеличиваем и поворачиваем сам холст для анимации сектора
+                if (isAnimating) {
+                    drawContext.canvas.translate(canvasCenter.x + translateX, canvasCenter.y + translateY)
+                    drawContext.canvas.scale(scale, scale)
+                    drawContext.canvas.translate(-canvasCenter.x, -canvasCenter.y)
+                }
 
                 drawArc(
-                    color = player.color,
+                    color = player.color.copy(alpha = alpha.coerceIn(0f, 1f)),
                     startAngle = startAngle,
                     sweepAngle = sweepAngle,
                     useCenter = true
                 )
 
-                if (index == highlightedIndex) {
+                if (index == highlightedIndex && !isAnimating) {
                     drawArc(
-                        color = Color.White.copy(alpha = 0.4f),
+                        color = Color.White.copy(alpha = 0.4f * alpha),
                         startAngle = startAngle,
                         sweepAngle = sweepAngle,
                         useCenter = true
                     )
                     drawArc(
-                        color = Color.White,
+                        color = Color.White.copy(alpha = alpha.coerceIn(0f, 1f)),
                         startAngle = startAngle,
                         sweepAngle = sweepAngle,
                         useCenter = true,
@@ -113,7 +143,7 @@ fun RouletteWheel(
                 }
 
                 drawArc(
-                    color = Color.White,
+                    color = Color.White.copy(alpha = alpha.coerceIn(0f, 1f)),
                     startAngle = startAngle,
                     sweepAngle = sweepAngle,
                     useCenter = true,
@@ -127,17 +157,17 @@ fun RouletteWheel(
                 }
 
                 if (textToDraw.isNotEmpty()) {
-                    val medianAngleRad = Math.toRadians((startAngle + sweepAngle / 2f).toDouble())
                     val textRadius = radius * 0.68f
-                    val textX = (center.x + textRadius * cos(medianAngleRad)).toFloat()
-                    val textY = (center.y + textRadius * sin(medianAngleRad)).toFloat()
+                    val textX = (canvasCenter.x + textRadius * cos(medianAngleRad)).toFloat()
+                    val textY = (canvasCenter.y + textRadius * sin(medianAngleRad)).toFloat()
 
                     drawContext.canvas.nativeCanvas.apply {
                         val paint = Paint().apply {
-                            color = android.graphics.Color.WHITE
-                            textSize = if (displayMode == DisplayMode.COLOR_AND_NAME) 36f else 54f
-                            isFakeBoldText = true
-                            textAlign = Paint.Align.CENTER
+                            this.color = android.graphics.Color.WHITE
+                            this.alpha = (255 * alpha).toInt().coerceIn(0, 255) // Прозрачность текста
+                            this.textSize = if (displayMode == DisplayMode.COLOR_AND_NAME) 36f else 54f
+                            this.isFakeBoldText = true
+                            this.textAlign = Paint.Align.CENTER
                             setShadowLayer(6f, 0f, 2f, android.graphics.Color.BLACK)
                         }
                         val bounds = Rect()
@@ -145,6 +175,8 @@ fun RouletteWheel(
                         drawText(textToDraw, textX, textY + bounds.height() / 2f, paint)
                     }
                 }
+
+                drawContext.canvas.restore()
             }
 
             drawCircle(
@@ -153,7 +185,6 @@ fun RouletteWheel(
                 style = Stroke(width = 8.dp.toPx())
             )
         }
-
         centerContent()
     }
 }
