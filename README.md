@@ -9,7 +9,7 @@
 
 ### 📥 Скачать приложение
 
-[![Скачать APK](https://img.shields.io/badge/Скачать-Latest_APK-success?style=for-the-badge&logo=android)](https://github.com/FIstif/CheeseRoul/releases/download/latest/app-debug.apk)
+[![Скачать APK](https://img.shields.io/badge/Скачать-Latest_APK-success?style=for-the-badge&logo=android)](https://github.com/ТВОЙ_ЮЗЕРНЕЙМ/CheeseRoul/releases/download/latest/app-debug.apk)
 
 *Нажмите на кнопку выше, чтобы скачать последнюю версию игры прямо на ваш Android-смартфон.*
 
