@@ -24,11 +24,11 @@
 > **Примечание:** Замените эти заглушки на реальные скриншоты вашего приложения.
 
 <div align="center">
-  <img src="screenshots/game.png" width="200" alt="Экран настроек"/>
+  <img src="screenshots/options.png" width="200" alt="Экран настроек"/>
   &nbsp;&nbsp;&nbsp;
   <img src="screenshots/game.png" width="200" alt="Игровой экран"/>
   &nbsp;&nbsp;&nbsp;
-  <img src="screenshots/game.png" width="200" alt="Экран истории"/>
+  <img src="screenshots/history.png" width="200" alt="Экран истории"/>
 </div>
 
 ## 🛠️ Технологии и Архитектура
