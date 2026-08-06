@@ -25,29 +25,31 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 1. Собираем теперь не Debug, а чистый Release!
       - name: Build Release APK
         run: ./gradlew assembleRelease
 
-      # 2. Учим Actions подписывать APK нашими секретами
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 34.0.0 # <--- НОВОЕ: Явно указываем современную версию
+      # Выкинули сломанный плагин и подписываем надежно через консоль!
+      - name: Sign APK manually
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # 1. Декодируем Base64 обратно в файл ключа
+          echo "$KEYSTORE_BASE64" | base64 --decode > app/keystore.jks
+          
+          # 2. Выравниваем APK (Zipalign)
+          $ANDROID_HOME/build-tools/34.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-aligned.apk
+          
+          # 3. Подписываем выровненный APK официальной утилитой
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks app/keystore.jks --ks-key-alias "$KEY_ALIAS" --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD --out app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/app-release-aligned.apk
 
-      # 3. Публикуем ИМЕННО подписанный файл
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Playable Build
-          # Передаем путь к файлу, который нам отдал предыдущий шаг подписи
-          files: ${{steps.sign_app.outputs.signedReleaseFile}}
+          files: app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
