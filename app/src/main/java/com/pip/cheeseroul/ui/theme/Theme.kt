@@ -2,7 +2,6 @@
 package com.pip.cheeseroul.ui.theme
 
 import android.app.Activity
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -25,33 +24,20 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = CheeseBrown
 )
 
-private val DarkColorScheme = darkColorScheme(
-    primary = CheeseYellow,
-    onPrimary = CheeseBrown,
-    secondary = CheeseOrange,
-    onSecondary = CheeseSurface,
-    background = CheeseBrown,
-    onBackground = CheeseBackground,
-    surface = CheeseBrown,
-    onSurface = CheeseBackground,
-    surfaceVariant = CheeseOrange,
-    onSurfaceVariant = CheeseBackground
-)
-
 @Composable
 fun CheeseRoulTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = false, // ВСЕГДА FALSE (Игнорируем систему)
     content: @Composable () -> Unit
 ) {
-    // Используем нашу тему (при желании можно принудительно выставить LightColorScheme)
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    // Жестко задаем светлую палитру
+    val colorScheme = LightColorScheme
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
         }
     }
 

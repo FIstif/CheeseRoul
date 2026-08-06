@@ -4,12 +4,7 @@ package com.pip.cheeseroul.viewmodel
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
-import com.pip.cheeseroul.model.DisplayMode
-import com.pip.cheeseroul.model.EliminationEffect
-import com.pip.cheeseroul.model.GameStat
-import com.pip.cheeseroul.model.Player
-import com.pip.cheeseroul.model.SpinState
-import com.pip.cheeseroul.model.TutorialStep
+import com.pip.cheeseroul.model.*
 import com.pip.cheeseroul.ui.theme.SectorColors
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,11 +29,11 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private val _players = MutableStateFlow<List<Player>>(emptyList())
     val players: StateFlow<List<Player>> = _players.asStateFlow()
 
+    private val _eliminatedPlayers = MutableStateFlow<List<Player>>(emptyList())
+    val eliminatedPlayers: StateFlow<List<Player>> = _eliminatedPlayers.asStateFlow()
+
     private val _spinState = MutableStateFlow(SpinState.IDLE)
     val spinState: StateFlow<SpinState> = _spinState.asStateFlow()
-
-    private val _selectedPlayer = MutableStateFlow<Player?>(null)
-    val selectedPlayer: StateFlow<Player?> = _selectedPlayer.asStateFlow()
 
     private val _isSoundEnabled = MutableStateFlow(true)
     val isSoundEnabled: StateFlow<Boolean> = _isSoundEnabled.asStateFlow()
@@ -52,9 +47,12 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private val _fakeStopChance = MutableStateFlow(0.5f)
     val fakeStopChance: StateFlow<Float> = _fakeStopChance.asStateFlow()
 
-    // НОВОЕ: Состояние эффекта удаления
-    private val _eliminationEffect = MutableStateFlow(EliminationEffect.EXPLOSION)
+    // НОВОЕ: По умолчанию теперь стоит случайный эффект!
+    private val _eliminationEffect = MutableStateFlow(EliminationEffect.RANDOM)
     val eliminationEffect: StateFlow<EliminationEffect> = _eliminationEffect.asStateFlow()
+
+    private val _spinAnimationMode = MutableStateFlow(SpinAnimationMode.SPINNING_ARROW)
+    val spinAnimationMode: StateFlow<SpinAnimationMode> = _spinAnimationMode.asStateFlow()
 
     private val _gameHistory = MutableStateFlow<List<GameStat>>(emptyList())
     val gameHistory: StateFlow<List<GameStat>> = _gameHistory.asStateFlow()
@@ -62,11 +60,8 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private var initialPlayersSnapshot = emptyList<Player>()
     private var currentSessionStartTime = 0L
     private val currentSpinCounts = mutableMapOf<Int, Int>()
-    private val currentEliminations = mutableListOf<Player>()
 
-    init {
-        generatePlayers(_playerCount.value)
-    }
+    init { generatePlayers(_playerCount.value) }
 
     fun nextTutorialStep() {
         val next = when (_tutorialStep.value) {
@@ -83,9 +78,7 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
         finishTutorial()
     }
 
-    private fun finishTutorial() {
-        prefs.edit().putBoolean("isFirstRun", false).apply()
-    }
+    private fun finishTutorial() { prefs.edit().putBoolean("isFirstRun", false).apply() }
 
     fun setDisplayMode(mode: DisplayMode) { _displayMode.value = mode }
 
@@ -100,11 +93,7 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
         val currentNames = _players.value.associate { it.id to it.name }
         val newPlayers = (0 until count).map { index ->
             val id = index + 1
-            Player(
-                id = id,
-                name = currentNames[id] ?: "Игрок $id",
-                color = SectorColors[index % SectorColors.size]
-            )
+            Player(id = id, name = currentNames[id] ?: "", color = SectorColors[index % SectorColors.size])
         }
         _players.value = newPlayers
     }
@@ -117,38 +106,39 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     fun setVibrationEnabled(enabled: Boolean) { _isVibrationEnabled.value = enabled }
     fun setFakeStopEnabled(enabled: Boolean) { _isFakeStopEnabled.value = enabled }
     fun setFakeStopChance(chance: Float) { _fakeStopChance.value = chance }
-    // НОВОЕ: Функция переключения эффекта
     fun setEliminationEffect(effect: EliminationEffect) { _eliminationEffect.value = effect }
+    fun setSpinAnimationMode(mode: SpinAnimationMode) { _spinAnimationMode.value = mode }
 
     fun startGameSession() {
         initialPlayersSnapshot = _players.value
         currentSessionStartTime = System.currentTimeMillis()
         currentSpinCounts.clear()
-        currentEliminations.clear()
+        _eliminatedPlayers.value = emptyList()
         _players.value.forEach { currentSpinCounts[it.id] = 0 }
     }
 
-    fun recordSpinResult(playerId: Int) {
-        currentSpinCounts[playerId] = (currentSpinCounts[playerId] ?: 0) + 1
-    }
+    fun recordSpinResult(playerId: Int) { currentSpinCounts[playerId] = (currentSpinCounts[playerId] ?: 0) + 1 }
 
     fun removePlayer(player: Player) {
         val updated = _players.value.filter { it.id != player.id }
-        currentEliminations.add(player)
+        _eliminatedPlayers.update { it + player }
         _players.value = updated
-        if (updated.size == 1) {
-            val winner = updated.first()
-            saveGameStat(winner)
-        }
+        if (updated.size == 1) saveGameStat(updated.first())
+    }
+
+    fun restorePlayer(player: Player) {
+        val updatedEliminated = _eliminatedPlayers.value.filter { it.id != player.id }
+        _eliminatedPlayers.value = updatedEliminated
+        val updatedPlayers = (_players.value + player).sortedBy { it.id }
+        _players.value = updatedPlayers
     }
 
     private fun saveGameStat(winner: Player) {
-        val duration = System.currentTimeMillis() - currentSessionStartTime
         val stat = GameStat(
-            durationMs = duration,
+            durationMs = System.currentTimeMillis() - currentSessionStartTime,
             initialPlayerCount = initialPlayersSnapshot.size,
             winner = winner,
-            firstEliminated = currentEliminations.firstOrNull(),
+            firstEliminated = _eliminatedPlayers.value.firstOrNull(),
             spinCounts = currentSpinCounts.toMap()
         )
         _gameHistory.update { listOf(stat) + it }

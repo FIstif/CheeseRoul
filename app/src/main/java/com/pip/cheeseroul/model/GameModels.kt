@@ -3,14 +3,12 @@ package com.pip.cheeseroul.model
 
 import androidx.compose.ui.graphics.Color
 
-// Режимы отображения
 enum class DisplayMode {
     COLOR_ONLY,
     COLOR_AND_NUMBER,
     COLOR_AND_NAME
 }
 
-// Модель игрока
 data class Player(
     val id: Int,
     val name: String = "",
@@ -18,7 +16,6 @@ data class Player(
     val isActive: Boolean = true
 )
 
-// Состояния вращения колеса
 enum class SpinState {
     IDLE,
     SPINNING,
@@ -33,11 +30,17 @@ enum class TutorialStep {
     DONE
 }
 
-// НОВОЕ: Эффекты выбывания
 enum class EliminationEffect(val title: String) {
     EXPLOSION("Взрыв"),
     FADE("Угасание"),
     SHRINK("Сжатие"),
+    FLY_AWAY("Улёт в корзину"), // НОВОЕ: Крутой эффект с вращением
     RANDOM("Случайно"),
     NONE("Без эффекта")
+}
+
+enum class SpinAnimationMode(val title: String) {
+    HIGHLIGHT("Подсветка секторов"),
+    SPINNING_ARROW("Крутится стрелка"),
+    SPINNING_WHEEL("Крутится колесо")
 }

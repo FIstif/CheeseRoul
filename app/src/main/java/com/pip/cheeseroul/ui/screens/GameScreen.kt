@@ -1,13 +1,9 @@
 // ui/screens/GameScreen.kt
 package com.pip.cheeseroul.ui.screens
 
-import android.content.Context
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -20,31 +16,44 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.pip.cheeseroul.model.EliminationEffect
-import com.pip.cheeseroul.model.Player
-import com.pip.cheeseroul.model.SpinState
-import com.pip.cheeseroul.model.TutorialStep
+import com.pip.cheeseroul.model.*
 import com.pip.cheeseroul.ui.components.CheeseButton
 import com.pip.cheeseroul.ui.components.ResultBanner
 import com.pip.cheeseroul.ui.components.RouletteWheel
-import com.pip.cheeseroul.ui.components.TutorialOverlay
 import com.pip.cheeseroul.ui.theme.CheeseBackground
 import com.pip.cheeseroul.ui.theme.CheeseBrown
+import com.pip.cheeseroul.ui.theme.CheeseOrange
+import com.pip.cheeseroul.ui.theme.CheeseYellow
 import com.pip.cheeseroul.utils.SoundManager
 import com.pip.cheeseroul.utils.VibrationManager
 import com.pip.cheeseroul.viewmodel.RouletteViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.sqrt
+import kotlin.math.*
 import kotlin.random.Random
+
+// Класс для частиц сыра и искр
+data class Particle(
+    var x: Float, var y: Float,
+    var vx: Float, var vy: Float,
+    var life: Float, val maxLife: Float,
+    val isCheese: Boolean, val color: Color,
+    var rotation: Float, var rotSpeed: Float,
+    var size: Float
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,98 +63,137 @@ fun GameScreen(
 ) {
     val context = LocalContext.current
     val players by viewModel.players.collectAsState()
+    val eliminatedPlayers by viewModel.eliminatedPlayers.collectAsState()
     val displayMode by viewModel.displayMode.collectAsState()
     val isSoundEnabled by viewModel.isSoundEnabled.collectAsState()
     val isVibrationEnabled by viewModel.isVibrationEnabled.collectAsState()
     val isFakeStopEnabled by viewModel.isFakeStopEnabled.collectAsState()
     val fakeStopChance by viewModel.fakeStopChance.collectAsState()
     val eliminationEffect by viewModel.eliminationEffect.collectAsState()
-    val tutorialStep by viewModel.tutorialStep.collectAsState()
+    val spinAnimationMode by viewModel.spinAnimationMode.collectAsState()
 
+    val rotationAngle = remember { Animatable(0f) }
     var highlightedIndex by remember { mutableIntStateOf(0) }
     var spinState by remember { mutableStateOf(SpinState.IDLE) }
     var showSettings by remember { mutableStateOf(false) }
     var showEliminateDialog by remember { mutableStateOf(false) }
     var playerToDelete by remember { mutableStateOf<Player?>(null) }
-
-    // НОВОЕ: Переменные для анимации
     var animatingPlayer by remember { mutableStateOf<Player?>(null) }
     var currentAnimEffect by remember { mutableStateOf(EliminationEffect.NONE) }
     val eliminationProgress = remember { Animatable(0f) }
-
     val soundManager = remember { SoundManager(context) }
     val vibrationManager = remember { VibrationManager(context) }
     val coroutineScope = rememberCoroutineScope()
 
+    // Для генератора частиц
+    var screenWidth by remember { mutableFloatStateOf(1000f) }
+    var screenHeight by remember { mutableFloatStateOf(2000f) }
+    var frameTrigger by remember { mutableIntStateOf(0) }
+    val particles = remember { mutableListOf<Particle>() }
+
     DisposableEffect(Unit) { onDispose { soundManager.release() } }
 
-    // Унифицированная функция удаления (с анимацией)
-    fun triggerElimination(targetPlayer: Player) {
-        coroutineScope.launch {
-            val resolvedEffect = if (eliminationEffect == EliminationEffect.RANDOM) {
-                listOf(EliminationEffect.EXPLOSION, EliminationEffect.FADE, EliminationEffect.SHRINK).random()
-            } else {
-                eliminationEffect
-            }
+    // Движок частиц (Крутится 60 FPS, когда нужно)
+    LaunchedEffect(spinState, players.size) {
+        var lastTime = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { time ->
+                val dt = (time - lastTime) / 1_000_000_000f
+                lastTime = time
+                var needsUpdate = false
 
-            if (resolvedEffect == EliminationEffect.NONE) {
-                viewModel.removePlayer(targetPlayer)
-                highlightedIndex = 0
-                spinState = SpinState.IDLE
-                if (isSoundEnabled) soundManager.playJump()
-                if (isVibrationEnabled) vibrationManager.vibrateWin()
-            } else {
-                // Включаем режим анимации
-                animatingPlayer = targetPlayer
-                currentAnimEffect = resolvedEffect
-                eliminationProgress.snapTo(0f)
+                // Фоновый сырный дождь (падают редко)
+                if (Random.nextFloat() < 0.015f) {
+                    particles.add(
+                        Particle(
+                            x = Random.nextFloat() * screenWidth, y = -100f,
+                            vx = Random.nextFloat() * 100f - 50f, vy = Random.nextFloat() * 100f + 100f,
+                            life = 15f, maxLife = 15f, isCheese = true, color = CheeseYellow,
+                            rotation = Random.nextFloat() * 360f, rotSpeed = Random.nextFloat() * 200f - 100f,
+                            size = Random.nextFloat() * 25f + 15f
+                        )
+                    )
+                    needsUpdate = true
+                }
 
-                if (isSoundEnabled) soundManager.playJump()
-                if (isVibrationEnabled) vibrationManager.vibrateWin()
+                // Искры при вращении колеса
+                if (spinState == SpinState.SPINNING || spinState == SpinState.FAKE_STOP) {
+                    repeat(3) {
+                        // Раскидываем искры из центра
+                        val angle = Random.nextFloat() * PI * 2
+                        val speed = Random.nextFloat() * 600f + 200f
+                        particles.add(
+                            Particle(
+                                x = screenWidth / 2f, y = screenHeight / 2f,
+                                vx = (cos(angle) * speed).toFloat(), vy = (sin(angle) * speed).toFloat(),
+                                life = Random.nextFloat() * 0.4f + 0.2f, maxLife = 0.6f, isCheese = false,
+                                color = listOf(CheeseYellow, CheeseOrange, Color.White).random(),
+                                rotation = 0f, rotSpeed = 0f, size = Random.nextFloat() * 12f + 4f
+                            )
+                        )
+                    }
+                    needsUpdate = true
+                }
 
-                // Анимируем до 1f (длина анимации 700мс)
-                eliminationProgress.animateTo(1f, animationSpec = tween(700, easing = FastOutSlowInEasing))
-
-                // Только теперь удаляем по-настоящему
-                viewModel.removePlayer(targetPlayer)
-                animatingPlayer = null
-                highlightedIndex = 0
-                spinState = SpinState.IDLE
+                // Физика частиц
+                if (particles.isNotEmpty()) {
+                    val iter = particles.iterator()
+                    while (iter.hasNext()) {
+                        val p = iter.next()
+                        p.life -= dt
+                        if (p.life <= 0f || p.y > screenHeight + 100f) {
+                            iter.remove()
+                        } else {
+                            p.x += p.vx * dt
+                            p.y += p.vy * dt
+                            p.vy += if (p.isCheese) 50f * dt else 600f * dt // Гравитация (искры падают быстрее)
+                            p.rotation += p.rotSpeed * dt
+                        }
+                    }
+                    needsUpdate = true
+                }
+                if (needsUpdate) frameTrigger++
             }
         }
     }
 
-    // Тряска смартфона для подтверждения удаления
-    DisposableEffect(playerToDelete) {
-        if (playerToDelete != null) {
-            val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-            val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-
-            val listener = object : SensorEventListener {
-                private var lastShakeTime = 0L
-                override fun onSensorChanged(event: SensorEvent) {
-                    val gForce = sqrt(
-                        Math.pow((event.values[0] / SensorManager.GRAVITY_EARTH).toDouble(), 2.0) +
-                                Math.pow((event.values[1] / SensorManager.GRAVITY_EARTH).toDouble(), 2.0) +
-                                Math.pow((event.values[2] / SensorManager.GRAVITY_EARTH).toDouble(), 2.0)
-                    ).toFloat()
-
-                    if (gForce > 2.5f) {
-                        val now = System.currentTimeMillis()
-                        if (now - lastShakeTime > 1000) {
-                            lastShakeTime = now
-                            val target = playerToDelete!!
-                            playerToDelete = null // Прячем окно
-                            triggerElimination(target) // Запускаем эпичный взрыв
-                        }
-                    }
+    LaunchedEffect(players.size) {
+        snapshotFlow { rotationAngle.value }.collect { angle ->
+            if (players.isEmpty()) return@collect
+            val sweep = 360f / players.size
+            val index = (((angle + (sweep / 2f)) / sweep).toInt()) % players.size
+            val safeIndex = index.coerceIn(0, players.size - 1)
+            if (safeIndex != highlightedIndex) {
+                highlightedIndex = safeIndex
+                if (spinState == SpinState.SPINNING || spinState == SpinState.FAKE_STOP) {
+                    if (isSoundEnabled) soundManager.playTick()
+                    if (isVibrationEnabled) vibrationManager.vibrateTick()
                 }
-                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
             }
-            sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
-            onDispose { sensorManager.unregisterListener(listener) }
-        } else {
-            onDispose { }
+        }
+    }
+
+    fun triggerElimination(targetPlayer: Player) {
+        coroutineScope.launch {
+            val resolvedEffect = if (eliminationEffect == EliminationEffect.RANDOM) {
+                listOf(EliminationEffect.EXPLOSION, EliminationEffect.FADE, EliminationEffect.SHRINK, EliminationEffect.FLY_AWAY).random()
+            } else { eliminationEffect }
+
+            if (resolvedEffect == EliminationEffect.NONE) {
+                viewModel.removePlayer(targetPlayer)
+                spinState = SpinState.IDLE
+            } else {
+                animatingPlayer = targetPlayer
+                currentAnimEffect = resolvedEffect
+                eliminationProgress.snapTo(0f)
+                if (isSoundEnabled) soundManager.playJump()
+                if (isVibrationEnabled) vibrationManager.vibrateWin()
+                // НОВОЕ: Увеличили время анимации для зрелищности
+                eliminationProgress.animateTo(1f, animationSpec = tween(1200, easing = FastOutSlowInEasing))
+                viewModel.removePlayer(targetPlayer)
+                animatingPlayer = null
+                spinState = SpinState.IDLE
+            }
         }
     }
 
@@ -156,40 +204,32 @@ fun GameScreen(
         if (isHardSpinning) return
         spinJob?.cancel()
         isHardSpinning = isHard
-
         spinJob = coroutineScope.launch {
             spinState = SpinState.SPINNING
-            val totalDurationMs = if (isHard) Random.nextLong(6000, 10000) else Random.nextLong(3000, 6000)
-            val startTime = System.currentTimeMillis()
-            var currentInterval = if (isHard) 10L else 50L
-
-            while (currentInterval < 800L) {
-                highlightedIndex = (highlightedIndex + 1) % players.size
-                if (isSoundEnabled) soundManager.playTick()
-                if (isVibrationEnabled) vibrationManager.vibrateTick()
-                delay(currentInterval)
-
-                val elapsed = System.currentTimeMillis() - startTime
-                val progress = (elapsed.toFloat() / totalDurationMs).coerceIn(0f, 1f)
-                val easeOut = 1f - (1f - progress) * (1f - progress)
-                currentInterval = (50 + (easeOut * 800)).toLong()
-            }
+            val duration = if (isHard) Random.nextInt(7500, 10000) else Random.nextInt(5000, 7500)
+            val spins = if (isHard) Random.nextInt(20, 30) else Random.nextInt(10, 15)
+            val sectorAngle = 360f / players.size
+            val finalIndex = Random.nextInt(players.size)
+            val currentBase = rotationAngle.value - (rotationAngle.value % 360f)
+            val exactTargetAngle = currentBase + (spins * 360f) + (finalIndex * sectorAngle)
+            val targetRotation = if (exactTargetAngle <= rotationAngle.value) exactTargetAngle + 360f else exactTargetAngle
 
             if (isFakeStopEnabled && Random.nextFloat() <= fakeStopChance) {
+                val fakeTarget = targetRotation - sectorAngle * 0.8f
+                rotationAngle.animateTo(targetValue = fakeTarget, animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f)))
                 spinState = SpinState.FAKE_STOP
-                delay(600L)
-                val jumpOffset = listOf(-2, -1, 1, 2).random()
-                highlightedIndex = (highlightedIndex + jumpOffset).mod(players.size)
+                delay(600)
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateJump()
-                delay(600L)
+                rotationAngle.animateTo(targetValue = targetRotation, animationSpec = tween(800, easing = FastOutSlowInEasing))
+            } else {
+                rotationAngle.animateTo(targetValue = targetRotation, animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f)))
             }
 
             spinState = SpinState.STOPPED
             isHardSpinning = false
             val winner = players[highlightedIndex]
             viewModel.recordSpinResult(winner.id)
-
             if (isSoundEnabled) soundManager.playWin()
             if (isVibrationEnabled) vibrationManager.vibrateWin()
         }
@@ -200,106 +240,114 @@ fun GameScreen(
             topBar = {
                 TopAppBar(
                     title = {},
-                    navigationIcon = {
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Настройки", tint = CheeseBrown)
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { showEliminateDialog = true }) {
-                            Icon(Icons.Default.Flag, contentDescription = "Выбыл", tint = CheeseBrown)
-                        }
-                    },
+                    navigationIcon = { IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, contentDescription = null, tint = CheeseBrown) } },
+                    actions = { IconButton(onClick = { showEliminateDialog = true }) { Icon(Icons.Default.Flag, contentDescription = null, tint = CheeseBrown) } },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = CheeseBackground)
                 )
             },
             containerColor = CheeseBackground
         ) { innerPadding ->
+            // НОВОЕ: Обертка для получения размеров экрана и отрисовки частиц
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .onSizeChanged {
+                        screenWidth = it.width.toFloat()
+                        screenHeight = it.height.toFloat()
+                    }
+            ) {
+                // Холст с эффектами (Рисуется под рулеткой)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    frameTrigger // Привязка для рекомпозиции
+                    particles.forEach { p ->
+                        val alpha = (p.life / p.maxLife).coerceIn(0f, 1f)
+                        if (p.isCheese) {
+                            withTransform({
+                                translate(p.x, p.y)
+                                rotate(p.rotation, pivot = Offset.Zero)
+                            }) {
+                                val path = Path().apply {
+                                    moveTo(0f, -p.size)
+                                    lineTo(p.size * 0.866f, p.size * 0.5f)
+                                    lineTo(-p.size * 0.866f, p.size * 0.5f)
+                                    close()
+                                }
+                                drawPath(path, p.color.copy(alpha = alpha * 0.7f)) // Чуть прозрачные на фоне
+                            }
+                        } else {
+                            drawCircle(p.color.copy(alpha = alpha), radius = p.size * alpha, center = Offset(p.x, p.y))
+                        }
+                    }
+                }
 
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
+                // Основной интерфейс
+                Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     RouletteWheel(
                         players = players,
                         displayMode = displayMode,
+                        spinAnimationMode = spinAnimationMode,
+                        currentAnimatedAngle = rotationAngle.value,
                         highlightedIndex = highlightedIndex,
                         animatingPlayer = animatingPlayer,
                         currentEffect = currentAnimEffect,
                         eliminationProgress = eliminationProgress.value,
                         onSectorLongClick = { player ->
-                            if (spinState != SpinState.SPINNING && spinState != SpinState.FAKE_STOP && players.size > 1) {
-                                playerToDelete = player
-                            }
+                            if (spinState != SpinState.SPINNING && spinState != SpinState.FAKE_STOP && players.size > 1) { playerToDelete = player }
                         }
                     ) {
+                        val buttonRotation = when (spinAnimationMode) {
+                            SpinAnimationMode.SPINNING_ARROW, SpinAnimationMode.HIGHLIGHT -> rotationAngle.value
+                            SpinAnimationMode.SPINNING_WHEEL -> 180f
+                        }
                         CheeseButton(
                             isSpinning = spinState == SpinState.SPINNING || spinState == SpinState.FAKE_STOP,
                             onNormalClick = { startSpinning(isHard = false) },
-                            onLongClick = { startSpinning(isHard = true) }
+                            onLongClick = { startSpinning(isHard = true) },
+                            modifier = Modifier.rotate(buttonRotation)
                         )
                     }
 
                     Box(modifier = Modifier.height(100.dp), contentAlignment = Alignment.Center) {
                         this@Column.AnimatedVisibility(
                             visible = spinState == SpinState.STOPPED && highlightedIndex in players.indices && players.size > 1,
-                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-                        ) {
-                            ResultBanner(player = players[highlightedIndex], displayMode = displayMode)
-                        }
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                        ) { ResultBanner(player = players[highlightedIndex], displayMode = displayMode) }
                     }
                 }
 
-                AnimatedVisibility(
-                    visible = playerToDelete != null,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.85f))
-                            .clickable { playerToDelete = null },
-                        contentAlignment = Alignment.Center
-                    ) {
+                AnimatedVisibility(visible = playerToDelete != null, enter = fadeIn(), exit = fadeOut()) {
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f)).clickable { playerToDelete = null }, contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                            Text(text = "Удаление", color = Color.White.copy(alpha = 0.7f), fontSize = 18.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = playerToDelete?.name?.ifBlank { "Игрок ${playerToDelete!!.id}" } ?: "",
-                                color = playerToDelete?.color ?: Color.White,
-                                fontSize = 32.sp, fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(32.dp))
-                            Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = Color.White, modifier = Modifier.size(64.dp))
-                            Spacer(modifier = Modifier.height(32.dp))
-                            Text(text = "Потрясите телефон 📳", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(text = "(или нажмите на экран для отмены)", color = Color.Gray, fontSize = 14.sp)
+                            Text("Исключить из игры?", color = Color.White.copy(alpha = 0.7f), fontSize = 18.sp)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Box(modifier = Modifier.size(80.dp).background(playerToDelete?.color ?: Color.Gray, androidx.compose.foundation.shape.CircleShape))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(playerToDelete?.name?.ifBlank { "Игрок ${playerToDelete!!.id}" } ?: "", color = playerToDelete?.color ?: Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(48.dp))
+                            Button(
+                                onClick = { val target = playerToDelete!!; playerToDelete = null; triggerElimination(target) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                                modifier = Modifier.height(56.dp).padding(horizontal = 32.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Да, выбыл!", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(24.dp))
+                            TextButton(onClick = { playerToDelete = null }) { Text("Отмена", color = Color.Gray, fontSize = 16.sp) }
                         }
                     }
                 }
             }
         }
 
-        AnimatedVisibility(
-            visible = players.size == 1 && animatingPlayer == null, // Ждем конца анимации перед победой
-            enter = scaleIn(initialScale = 0.8f) + fadeIn(tween(500)),
-            exit = fadeOut(tween(300))
-        ) {
+        AnimatedVisibility(visible = players.size == 1 && animatingPlayer == null, enter = scaleIn(initialScale = 0.8f) + fadeIn(tween(500)), exit = fadeOut(tween(300))) {
             val finalWinner = remember { players.firstOrNull() } ?: return@AnimatedVisibility
-
             val infiniteTransition = rememberInfiniteTransition(label = "winPulse")
-            val scale by infiniteTransition.animateFloat(
-                initialValue = 1f, targetValue = 1.15f,
-                animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                label = "winScale"
-            )
+            val scale by infiniteTransition.animateFloat(initialValue = 1f, targetValue = 1.15f, animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "winScale")
 
             LaunchedEffect(Unit) {
                 if (isSoundEnabled) soundManager.playWin()
@@ -309,21 +357,11 @@ fun GameScreen(
                 onBackToMenu()
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(finalWinner.color)
-                    .pointerInput(Unit) { detectTapGestures { } },
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.fillMaxSize().background(finalWinner.color).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("🎉 ПОБЕДИТЕЛЬ 🎉", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = finalWinner.name.ifBlank { "Игрок ${finalWinner.id}" },
-                        fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                        modifier = Modifier.scale(scale)
-                    )
+                    Text(finalWinner.name.ifBlank { "Игрок ${finalWinner.id}" }, fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.scale(scale))
                     Spacer(modifier = Modifier.height(32.dp))
                     Text("Игра окончена", fontSize = 18.sp, color = Color.White.copy(alpha = 0.8f))
                 }
@@ -332,33 +370,24 @@ fun GameScreen(
 
         if (showSettings) {
             SettingsModal(
-                isSoundEnabled = isSoundEnabled, isVibrationEnabled = isVibrationEnabled,
-                displayMode = displayMode, isFakeStopEnabled = isFakeStopEnabled, fakeStopChance = fakeStopChance,
-                eliminationEffect = eliminationEffect, // Передаем эффект
+                isSoundEnabled = isSoundEnabled, isVibrationEnabled = isVibrationEnabled, displayMode = displayMode,
+                isFakeStopEnabled = isFakeStopEnabled, fakeStopChance = fakeStopChance, eliminationEffect = eliminationEffect,
+                spinAnimationMode = spinAnimationMode,
                 onSoundToggle = { viewModel.setSoundEnabled(it) }, onVibrationToggle = { viewModel.setVibrationEnabled(it) },
                 onFakeStopToggle = { viewModel.setFakeStopEnabled(it) }, onChanceChange = { viewModel.setFakeStopChance(it) },
-                onModeSelect = { viewModel.setDisplayMode(it) },
-                onEffectSelect = { viewModel.setEliminationEffect(it) }, // Сохраняем эффект
-                onExitToMenu = { showSettings = false; viewModel.restorePlayersAfterGame(); onBackToMenu() },
-                onDismiss = { showSettings = false }
+                onModeSelect = { viewModel.setDisplayMode(it) }, onEffectSelect = { viewModel.setEliminationEffect(it) },
+                onSpinModeSelect = { viewModel.setSpinAnimationMode(it) },
+                onExitToMenu = { showSettings = false; viewModel.restorePlayersAfterGame(); onBackToMenu() }, onDismiss = { showSettings = false }
             )
         }
 
         if (showEliminateDialog) {
             EliminateDialog(
-                players = players,
-                onPlayerEliminated = { player ->
-                    showEliminateDialog = false
-                    triggerElimination(player) // Используем ту же анимацию для ручного удаления
-                },
+                players = players, eliminatedPlayers = eliminatedPlayers,
+                onPlayerEliminated = { player -> showEliminateDialog = false; triggerElimination(player) },
+                onPlayerRestored = { player -> showEliminateDialog = false; viewModel.restorePlayer(player) },
                 onDismiss = { showEliminateDialog = false }
             )
-        }
-
-        if (tutorialStep == TutorialStep.SPIN_HINT) {
-            TutorialOverlay(text = "Кликните на сыр в центре, чтобы запустить рулетку.\n\nУдерживайте кнопку сыра нажатой для мощного и долгого вращения!", onNext = { viewModel.nextTutorialStep() }, onSkip = { viewModel.skipTutorial() })
-        } else if (tutorialStep == TutorialStep.DELETE_HINT) {
-            TutorialOverlay(text = "Если кто-то выбыл — удерживайте палец на его секторе или нажмите на иконку флажка сверху, чтобы удалить его из игры.", onNext = { viewModel.nextTutorialStep() }, onSkip = { viewModel.skipTutorial() })
         }
     }
 }

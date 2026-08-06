@@ -3,55 +3,52 @@ package com.pip.cheeseroul.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.pip.cheeseroul.model.DisplayMode
 import com.pip.cheeseroul.model.EliminationEffect
+import com.pip.cheeseroul.model.SpinAnimationMode
 import com.pip.cheeseroul.ui.theme.*
 import kotlin.math.roundToInt
 
 @Composable
 fun SettingsModal(
-    isSoundEnabled: Boolean,
-    isVibrationEnabled: Boolean,
-    displayMode: DisplayMode,
-    isFakeStopEnabled: Boolean,
-    fakeStopChance: Float,
-    eliminationEffect: EliminationEffect, // НОВОЕ
-    onSoundToggle: (Boolean) -> Unit,
-    onVibrationToggle: (Boolean) -> Unit,
-    onFakeStopToggle: (Boolean) -> Unit,
-    onChanceChange: (Float) -> Unit,
-    onModeSelect: (DisplayMode) -> Unit,
-    onEffectSelect: (EliminationEffect) -> Unit, // НОВОЕ
-    onExitToMenu: () -> Unit,
-    onDismiss: () -> Unit
+    isSoundEnabled: Boolean, isVibrationEnabled: Boolean, displayMode: DisplayMode,
+    isFakeStopEnabled: Boolean, fakeStopChance: Float, eliminationEffect: EliminationEffect,
+    spinAnimationMode: SpinAnimationMode,
+    onSoundToggle: (Boolean) -> Unit, onVibrationToggle: (Boolean) -> Unit,
+    onFakeStopToggle: (Boolean) -> Unit, onChanceChange: (Float) -> Unit,
+    onModeSelect: (DisplayMode) -> Unit, onEffectSelect: (EliminationEffect) -> Unit,
+    onSpinModeSelect: (SpinAnimationMode) -> Unit, onExitToMenu: () -> Unit, onDismiss: () -> Unit
 ) {
     var effectDropdownExpanded by remember { mutableStateOf(false) }
+    var spinModeDropdownExpanded by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = CheeseBackground,
-            modifier = Modifier.padding(16.dp)
+            shape = RoundedCornerShape(24.dp), color = CheeseBackground,
+            modifier = Modifier.padding(16.dp).fillMaxHeight(0.9f)
         ) {
+            // НОВОЕ: Добавили verticalScroll, чтобы большое меню можно было листать!
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("⚙️ Настройки", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = CheeseBrown)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Звук и Вибрация
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Звук", fontSize = 18.sp, color = CheeseBrown)
                     Switch(checked = isSoundEnabled, onCheckedChange = onSoundToggle, colors = SwitchDefaults.colors(checkedThumbColor = CheeseOrange))
@@ -65,7 +62,23 @@ fun SettingsModal(
                 HorizontalDivider(color = CheeseCardBg)
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Эффект выбывания
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Анимация", fontSize = 16.sp, color = CheeseBrown, fontWeight = FontWeight.Medium)
+                    Box {
+                        TextButton(onClick = { spinModeDropdownExpanded = true }) {
+                            Text(spinAnimationMode.title, color = CheeseOrange, fontWeight = FontWeight.Bold)
+                        }
+                        DropdownMenu(
+                            expanded = spinModeDropdownExpanded, onDismissRequest = { spinModeDropdownExpanded = false },
+                            modifier = Modifier.background(CheeseBackground)
+                        ) {
+                            SpinAnimationMode.entries.forEach { mode ->
+                                DropdownMenuItem(text = { Text(mode.title, color = CheeseBrown) }, onClick = { onSpinModeSelect(mode); spinModeDropdownExpanded = false })
+                            }
+                        }
+                    }
+                }
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Эффект выбывания", fontSize = 16.sp, color = CheeseBrown, fontWeight = FontWeight.Medium)
                     Box {
@@ -73,18 +86,11 @@ fun SettingsModal(
                             Text(eliminationEffect.title, color = CheeseOrange, fontWeight = FontWeight.Bold)
                         }
                         DropdownMenu(
-                            expanded = effectDropdownExpanded,
-                            onDismissRequest = { effectDropdownExpanded = false },
+                            expanded = effectDropdownExpanded, onDismissRequest = { effectDropdownExpanded = false },
                             modifier = Modifier.background(CheeseBackground)
                         ) {
                             EliminationEffect.entries.forEach { effect ->
-                                DropdownMenuItem(
-                                    text = { Text(effect.title, color = CheeseBrown) },
-                                    onClick = {
-                                        onEffectSelect(effect)
-                                        effectDropdownExpanded = false
-                                    }
-                                )
+                                DropdownMenuItem(text = { Text(effect.title, color = CheeseBrown) }, onClick = { onEffectSelect(effect); effectDropdownExpanded = false })
                             }
                         }
                     }
@@ -94,7 +100,6 @@ fun SettingsModal(
                 HorizontalDivider(color = CheeseCardBg)
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Ложная остановка
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Ложная остановка", fontSize = 16.sp, color = CheeseBrown, fontWeight = FontWeight.Medium)
                     Switch(checked = isFakeStopEnabled, onCheckedChange = onFakeStopToggle, colors = SwitchDefaults.colors(checkedThumbColor = CheeseOrange))
@@ -104,9 +109,7 @@ fun SettingsModal(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("Шанс срабатывания: ${(fakeStopChance * 100).roundToInt()}%", fontSize = 14.sp, color = CheeseBrown)
                     Slider(
-                        value = fakeStopChance,
-                        onValueChange = onChanceChange,
-                        valueRange = 0.1f..1f,
+                        value = fakeStopChance, onValueChange = onChanceChange, valueRange = 0.1f..1f,
                         colors = SliderDefaults.colors(thumbColor = CheeseOrange, activeTrackColor = CheeseYellow)
                     )
                 }
@@ -115,7 +118,6 @@ fun SettingsModal(
                 HorizontalDivider(color = CheeseCardBg)
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Режим
                 Text("Режим отображения:", fontWeight = FontWeight.SemiBold, color = CheeseBrown)
                 DisplayMode.entries.forEach { mode ->
                     val title = when (mode) {
@@ -128,34 +130,15 @@ fun SettingsModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-                Button(
-                    onClick = onExitToMenu,
-                    colors = ButtonDefaults.buttonColors(containerColor = CheeseOrange),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Button(onClick = onExitToMenu, colors = ButtonDefaults.buttonColors(containerColor = CheeseOrange), modifier = Modifier.fillMaxWidth()) {
                     Text("Выйти в меню")
                 }
-
                 Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("Закрыть", color = CheeseBrown)
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Иконка приложения: Lima Studio (Icon-Icons.com) по лицензии CC BY 4.0",
-                    fontSize = 10.sp,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 14.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
             }
         }
     }
