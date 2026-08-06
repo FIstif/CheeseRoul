@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pip.cheeseroul.model.DisplayMode
@@ -38,12 +39,14 @@ fun SetupScreen(
     val players by viewModel.players.collectAsState()
     val tutorialStep by viewModel.tutorialStep.collectAsState()
 
+    val maxNameLength = 12 // Максимальная длина имени
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
                 CenterAlignedTopAppBar(
                     title = {
-                        Text("🧀 Колесо судьбы", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = CheeseBrown)
+                        Text("Настройки", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = CheeseBrown)
                     },
                     actions = {
                         IconButton(onClick = onOpenHistory) {
@@ -62,9 +65,8 @@ fun SetupScreen(
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-
                 Text(
-                    text = "Режим отображения:",
+                    text = "Отображение секторов",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = CheeseBrown,
@@ -72,11 +74,9 @@ fun SetupScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 ModeSelector(selectedMode = displayMode, onModeSelected = { viewModel.setDisplayMode(it) })
-
                 Spacer(modifier = Modifier.height(24.dp))
-
                 Text(
-                    text = "Количество игроков:",
+                    text = "Количество игроков",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = CheeseBrown,
@@ -97,7 +97,6 @@ fun SetupScreen(
                         enabled = playerCount > 2,
                         colors = ButtonDefaults.buttonColors(containerColor = CheeseOrange)
                     ) { Text("-", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
-
                     AnimatedContent(
                         targetState = playerCount,
                         label = "playerCountAnimation",
@@ -105,16 +104,13 @@ fun SetupScreen(
                     ) { count ->
                         Text(text = "$count", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = CheeseBrown)
                     }
-
                     Button(
                         onClick = { viewModel.setPlayerCount(playerCount + 1) },
                         enabled = playerCount < 7,
                         colors = ButtonDefaults.buttonColors(containerColor = CheeseOrange)
                     ) { Text("+", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
                 }
-
                 Spacer(modifier = Modifier.height(16.dp))
-
                 AnimatedVisibility(
                     visible = displayMode == DisplayMode.COLOR_AND_NAME,
                     modifier = Modifier.weight(1f)
@@ -127,9 +123,20 @@ fun SetupScreen(
                         itemsIndexed(players, key = { _, p -> p.id }) { index, player ->
                             OutlinedTextField(
                                 value = player.name,
-                                onValueChange = { viewModel.updatePlayerName(player.id, it) },
+                                onValueChange = { newText ->
+                                    if (newText.length <= maxNameLength) {
+                                        viewModel.updatePlayerName(player.id, newText)
+                                    }
+                                },
                                 label = { Text("Игрок ${index + 1}") },
                                 singleLine = true,
+                                supportingText = {
+                                    Text(
+                                        text = "${player.name.length} / $maxNameLength",
+                                        modifier = Modifier.fillMaxWidth(),
+                                        textAlign = TextAlign.End
+                                    )
+                                },
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = player.color, unfocusedBorderColor = CheeseOrange,
                                     focusedContainerColor = CheeseSurface, unfocusedContainerColor = CheeseSurface
@@ -139,23 +146,20 @@ fun SetupScreen(
                         }
                     }
                 }
-
                 if (displayMode != DisplayMode.COLOR_AND_NAME) Spacer(modifier = Modifier.weight(1f))
-
                 Button(
                     onClick = onStartGame,
                     modifier = Modifier.fillMaxWidth().height(64.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = CheeseYellow)
                 ) {
-                    Text(text = "ИГРАТЬ 🎲", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = CheeseBrown)
+                    Text(text = "Начать игру", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = CheeseBrown)
                 }
             }
         }
-
         if (tutorialStep == TutorialStep.SETUP_HINT) {
             TutorialOverlay(
-                text = "Добро пожаловать в Колесо судьбы!\n\nВыберите количество игроков, настройте отображение и впишите имена. Как будете готовы — жмите «ИГРАТЬ»!",
+                text = "Добро пожаловать!\n\nНастройте рулетку и нажмите Начать игру.",
                 onNext = { viewModel.nextTutorialStep() },
                 onSkip = { viewModel.skipTutorial() }
             )
@@ -167,9 +171,9 @@ fun SetupScreen(
 private fun ModeSelector(selectedMode: DisplayMode, onModeSelected: (DisplayMode) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         val modes = listOf(
-            DisplayMode.COLOR_ONLY to "Только цвет",
-            DisplayMode.COLOR_AND_NUMBER to "Цвет + номер",
-            DisplayMode.COLOR_AND_NAME to "Цвет + имя"
+            DisplayMode.COLOR_ONLY to "Только цвета",
+            DisplayMode.COLOR_AND_NUMBER to "Цвета и номера",
+            DisplayMode.COLOR_AND_NAME to "Цвета и имена"
         )
         modes.forEach { (mode, label) ->
             FilterChip(
