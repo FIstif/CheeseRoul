@@ -2,11 +2,14 @@ name: Beta CI/CD Build
 
 on:
   push:
-    branches: [ "develop" ] # Срабатывает только для develop
+    branches: [ "develop" ]
 
 jobs:
   build-beta:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout the code
@@ -22,13 +25,17 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # Собираем чистое приложение
       - name: Build Beta APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew clean assembleDebug
 
-      # Сохраняем APK как артефакт (он будет доступен для скачивания во вкладке Actions)
-      - name: Upload Beta APK
-        uses: actions/upload-artifact@v4
+      # Создаем тот самый релиз "beta", откуда качает кнопка в README
+      - name: Create Beta Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: cheese-roulette-beta
-          path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 7 # Артефакт хранится 7 дней, чтобы не занимать место
+          tag_name: beta
+          name: Beta Build (Unstable)
+          prerelease: true
+          files: app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
