@@ -2,14 +2,11 @@ name: Beta CI/CD Build
 
 on:
   push:
-    branches: [ "develop" ]
+    branches: [ "develop" ] # Срабатывает только для develop
 
 jobs:
   build-beta:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout the code
@@ -28,13 +25,10 @@ jobs:
       - name: Build Beta APK
         run: ./gradlew assembleDebug
 
-      # Создаем публичный предрелиз с тегом beta
-      - name: Create Beta Release
-        uses: softprops/action-gh-release@v2
+      # Сохраняем APK как артефакт (он будет доступен для скачивания во вкладке Actions)
+      - name: Upload Beta APK
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: beta
-          name: Beta Build (Unstable)
-          prerelease: true # Помечаем как предрелиз, чтобы он не путался со стабильным
-          files: app/build/outputs/apk/debug/app-debug.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: cheese-roulette-beta
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7 # Артефакт хранится 7 дней, чтобы не занимать место
