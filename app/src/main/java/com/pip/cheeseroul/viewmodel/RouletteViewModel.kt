@@ -15,6 +15,7 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
 
     private val prefs = application.getSharedPreferences("CheesePrefs", Context.MODE_PRIVATE)
 
+    // ПОДСКАЗКИ: Читаем сохраненное значение
     private val _tutorialStep = MutableStateFlow(
         if (prefs.getBoolean("isFirstRun", true)) TutorialStep.SETUP_HINT else TutorialStep.DONE
     )
@@ -44,31 +45,27 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private val _isFakeStopEnabled = MutableStateFlow(true)
     val isFakeStopEnabled: StateFlow<Boolean> = _isFakeStopEnabled.asStateFlow()
 
-    // --- НОВЫЕ ПЕРЕМЕННЫЕ ОТЛАДКИ АНИМАЦИИ (ЭТАП 3) ---
+    // НОВОЕ: Переключатель сырного фона
+    private val _isCheeseBackgroundEnabled = MutableStateFlow(true)
+    val isCheeseBackgroundEnabled: StateFlow<Boolean> = _isCheeseBackgroundEnabled.asStateFlow()
+
+    // --- ПЕРЕМЕННЫЕ ОТЛАДКИ АНИМАЦИИ ---
     private val _fakeStopChance = MutableStateFlow(0.5f)
     val fakeStopChance: StateFlow<Float> = _fakeStopChance.asStateFlow()
-
-    private val _spinDuration = MutableStateFlow(6.0f) // Длительность вращения (в секундах)
+    private val _spinDuration = MutableStateFlow(6.0f)
     val spinDuration: StateFlow<Float> = _spinDuration.asStateFlow()
-
-    private val _fakeStopDuration = MutableStateFlow(0.8f) // Длительность фейк-остановки (в секундах)
+    private val _fakeStopDuration = MutableStateFlow(0.8f)
     val fakeStopDuration: StateFlow<Float> = _fakeStopDuration.asStateFlow()
-
-    private val _fakeJumpDuration = MutableStateFlow(0.5f) // Длительность прыжка (в секундах)
+    private val _fakeJumpDuration = MutableStateFlow(0.5f)
     val fakeJumpDuration: StateFlow<Float> = _fakeJumpDuration.asStateFlow()
-
-    private val _easingFactor = MutableStateFlow(0.2f) // Плавность замедления (0.0 - 1.0)
+    private val _easingFactor = MutableStateFlow(0.2f)
     val easingFactor: StateFlow<Float> = _easingFactor.asStateFlow()
-
-    private val _fakeStopsCountDebug = MutableStateFlow(1f) // Кол-во фейковых остановок (1-3)
+    private val _fakeStopsCountDebug = MutableStateFlow(1f)
     val fakeStopsCountDebug: StateFlow<Float> = _fakeStopsCountDebug.asStateFlow()
-
-    private val _soundVolume = MutableStateFlow(1.0f) // Громкость звука
+    private val _soundVolume = MutableStateFlow(1.0f)
     val soundVolume: StateFlow<Float> = _soundVolume.asStateFlow()
-
-    private val _vibrationStrength = MutableStateFlow(1.0f) // Сила вибрации
+    private val _vibrationStrength = MutableStateFlow(1.0f)
     val vibrationStrength: StateFlow<Float> = _vibrationStrength.asStateFlow()
-    // --------------------------------------------------
 
     private val _eliminationEffect = MutableStateFlow(EliminationEffect.RANDOM)
     val eliminationEffect: StateFlow<EliminationEffect> = _eliminationEffect.asStateFlow()
@@ -106,7 +103,14 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
         finishTutorial()
     }
 
+    // Сохраняем флаг, что обучение пройдено
     private fun finishTutorial() { prefs.edit().putBoolean("isFirstRun", false).apply() }
+
+    // НОВОЕ: Сброс обучения
+    fun resetTutorial() {
+        prefs.edit().putBoolean("isFirstRun", true).apply()
+        _tutorialStep.value = TutorialStep.SETUP_HINT
+    }
 
     fun setDisplayMode(mode: DisplayMode) { _displayMode.value = mode }
 
@@ -133,6 +137,7 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     fun setSoundEnabled(enabled: Boolean) { _isSoundEnabled.value = enabled }
     fun setVibrationEnabled(enabled: Boolean) { _isVibrationEnabled.value = enabled }
     fun setFakeStopEnabled(enabled: Boolean) { _isFakeStopEnabled.value = enabled }
+    fun setCheeseBackgroundEnabled(enabled: Boolean) { _isCheeseBackgroundEnabled.value = enabled }
     fun setEliminationEffect(effect: EliminationEffect) { _eliminationEffect.value = effect }
     fun setSpinAnimationMode(mode: SpinAnimationMode) { _spinAnimationMode.value = mode }
 

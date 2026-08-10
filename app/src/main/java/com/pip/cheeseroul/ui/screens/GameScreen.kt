@@ -73,7 +73,10 @@ fun GameScreen(
     val eliminationEffect by viewModel.eliminationEffect.collectAsState()
     val spinAnimationMode by viewModel.spinAnimationMode.collectAsState()
 
-    // НОВОЕ: Стейты статистики
+    // Читаем состояние сырного фона
+    val isCheeseBackgroundEnabled by viewModel.isCheeseBackgroundEnabled.collectAsState()
+
+    // Стейты статистики
     val totalSpins by viewModel.totalSpins.collectAsState()
     val fakeStopsCount by viewModel.fakeStopsCount.collectAsState()
 
@@ -173,6 +176,26 @@ fun GameScreen(
                     needsUpdate = true
                 }
                 if (needsUpdate) frameTrigger++
+
+                // Фоновый сырный дождь (падает только если включена настройка)
+                if (isCheeseBackgroundEnabled && Random.nextFloat() < 0.015f) {
+                    particles.add(
+                        Particle(
+                            x = Random.nextFloat() * screenWidth,
+                            y = -100f,
+                            vx = Random.nextFloat() * 100f - 50f,
+                            vy = Random.nextFloat() * 100f + 100f,
+                            life = 15f,
+                            maxLife = 15f,
+                            isCheese = true,
+                            color = CheeseYellow,
+                            rotation = Random.nextFloat() * 360f,
+                            rotSpeed = Random.nextFloat() * 200f - 100f,
+                            size = Random.nextFloat() * 25f + 15f
+                        )
+                    )
+                    needsUpdate = true
+                }
             }
         }
     }
@@ -559,19 +582,41 @@ fun GameScreen(
 
         if (showSettings) {
             SettingsModal(
-                isSoundEnabled = isSoundEnabled, isVibrationEnabled = isVibrationEnabled, displayMode = displayMode,
-                isFakeStopEnabled = isFakeStopEnabled, spinAnimationMode = spinAnimationMode, eliminationEffect = eliminationEffect,
+                isSoundEnabled = isSoundEnabled,
+                isVibrationEnabled = isVibrationEnabled,
+                displayMode = displayMode,
+                isFakeStopEnabled = isFakeStopEnabled,
+                spinAnimationMode = spinAnimationMode,
+                eliminationEffect = eliminationEffect,
 
-                // Передаем новые стейты
-                fakeStopChance = fakeStopChance, spinDuration = spinDuration, fakeStopDuration = fakeStopDuration,
-                fakeJumpDuration = fakeJumpDuration, easingFactor = easingFactor, fakeStopsCountDebug = fakeStopsCountDebug,
-                soundVolume = soundVolume, vibrationStrength = vibrationStrength,
+                // Передаем состояние фона
+                isCheeseBackgroundEnabled = isCheeseBackgroundEnabled,
 
-                onSoundToggle = { viewModel.setSoundEnabled(it) }, onVibrationToggle = { viewModel.setVibrationEnabled(it) },
-                onFakeStopToggle = { viewModel.setFakeStopEnabled(it) }, onModeSelect = { viewModel.setDisplayMode(it) },
-                onEffectSelect = { viewModel.setEliminationEffect(it) }, onSpinModeSelect = { viewModel.setSpinAnimationMode(it) },
+                fakeStopChance = fakeStopChance,
+                spinDuration = spinDuration,
+                fakeStopDuration = fakeStopDuration,
+                fakeJumpDuration = fakeJumpDuration,
+                easingFactor = easingFactor,
+                fakeStopsCountDebug = fakeStopsCountDebug,
+                soundVolume = soundVolume,
+                vibrationStrength = vibrationStrength,
 
-                // Передаем коллбэки
+                onSoundToggle = { viewModel.setSoundEnabled(it) },
+                onVibrationToggle = { viewModel.setVibrationEnabled(it) },
+                onFakeStopToggle = { viewModel.setFakeStopEnabled(it) },
+                onModeSelect = { viewModel.setDisplayMode(it) },
+                onEffectSelect = { viewModel.setEliminationEffect(it) },
+                onSpinModeSelect = { viewModel.setSpinAnimationMode(it) },
+
+                // Передаем коллбэк для фона и сброса обучения
+                onCheeseBackgroundToggle = { viewModel.setCheeseBackgroundEnabled(it) },
+                onResetTutorial = {
+                    viewModel.resetTutorial()
+                    showSettings = false // Автоматически закрываем настройки
+                    viewModel.restorePlayersAfterGame() // Сбрасываем игру
+                    onBackToMenu() // Откидываем в меню, чтобы показать подсказки с самого начала
+                },
+
                 onChanceChange = { viewModel.setFakeStopChance(it) },
                 onSpinDurationChange = { viewModel.setSpinDuration(it) },
                 onFakeStopDurationChange = { viewModel.setFakeStopDuration(it) },
@@ -581,7 +626,10 @@ fun GameScreen(
                 onSoundVolumeChange = { viewModel.setSoundVolume(it) },
                 onVibrationStrengthChange = { viewModel.setVibrationStrength(it) },
 
-                onExitToMenu = { showSettings = false; viewModel.restorePlayersAfterGame(); onBackToMenu() }, onDismiss = { showSettings = false }
+                onExitToMenu = {
+                    showSettings = false; viewModel.restorePlayersAfterGame(); onBackToMenu()
+                },
+                onDismiss = { showSettings = false }
             )
         }
 
