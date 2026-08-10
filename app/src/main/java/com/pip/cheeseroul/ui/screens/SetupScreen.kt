@@ -125,7 +125,11 @@ fun SetupScreen(
                                 value = player.name,
                                 onValueChange = { newText ->
                                     if (newText.length <= maxNameLength) {
-                                        viewModel.updatePlayerName(player.id, newText)
+                                        // НОВОЕ: Автоматически делаем первую букву заглавной
+                                        val formattedText = newText.replaceFirstChar {
+                                            if (it.isLowerCase()) it.titlecase() else it.toString()
+                                        }
+                                        viewModel.updatePlayerName(player.id, formattedText)
                                     }
                                 },
                                 label = { Text("Игрок ${index + 1}") },

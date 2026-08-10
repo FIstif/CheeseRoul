@@ -188,7 +188,7 @@ fun GameScreen(
                 eliminationProgress.snapTo(0f)
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateWin()
-                // НОВОЕ: Увеличили время анимации для зрелищности
+                // Увеличили время анимации для зрелищности
                 eliminationProgress.animateTo(1f, animationSpec = tween(1200, easing = FastOutSlowInEasing))
                 viewModel.removePlayer(targetPlayer)
                 animatingPlayer = null
@@ -215,15 +215,40 @@ fun GameScreen(
             val targetRotation = if (exactTargetAngle <= rotationAngle.value) exactTargetAngle + 360f else exactTargetAngle
 
             if (isFakeStopEnabled && Random.nextFloat() <= fakeStopChance) {
-                val fakeTarget = targetRotation - sectorAngle * 0.8f
-                rotationAngle.animateTo(targetValue = fakeTarget, animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f)))
+                // НОВОЕ: Выбираем абсолютно любую другую ячейку для ложной остановки
+                // coerceAtLeast(2) страхует нас от краша, если вдруг остался 1 игрок
+                val maxOffset = max(2, players.size)
+                val randomOffset = Random.nextInt(1, maxOffset)
+                val fakeIndex = (finalIndex + randomOffset) % players.size
+
+                // Считаем угол до фейковой ячейки
+                val fakeExactTarget = currentBase + (spins * 360f) + (fakeIndex * sectorAngle)
+                val fakeTargetRotation = if (fakeExactTarget <= rotationAngle.value) fakeExactTarget + 360f else fakeExactTarget
+
+                // Крутим до фейковой ячейки
+                rotationAngle.animateTo(
+                    targetValue = fakeTargetRotation,
+                    animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f))
+                )
                 spinState = SpinState.FAKE_STOP
-                delay(600)
+                delay(600) // Пауза для интриги
+
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateJump()
-                rotationAngle.animateTo(targetValue = targetRotation, animationSpec = tween(800, easing = FastOutSlowInEasing))
+
+                // Вычисляем путь до реального победителя и делаем резкий прыжок
+                val distanceToCorrect = ((finalIndex - fakeIndex + players.size) % players.size) * sectorAngle
+                val finalJumpTarget = fakeTargetRotation + distanceToCorrect
+
+                rotationAngle.animateTo(
+                    targetValue = finalJumpTarget,
+                    animationSpec = tween(800, easing = FastOutSlowInEasing)
+                )
             } else {
-                rotationAngle.animateTo(targetValue = targetRotation, animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f)))
+                rotationAngle.animateTo(
+                    targetValue = targetRotation,
+                    animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f))
+                )
             }
 
             spinState = SpinState.STOPPED
@@ -240,14 +265,27 @@ fun GameScreen(
             topBar = {
                 TopAppBar(
                     title = {},
-                    navigationIcon = { IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, contentDescription = null, tint = CheeseBrown) } },
-                    actions = { IconButton(onClick = { showEliminateDialog = true }) { Icon(Icons.Default.Flag, contentDescription = null, tint = CheeseBrown) } },
+                    navigationIcon = {
+                        // НОВОЕ: Скрываем настройки во время любых анимаций и вращений
+                        if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null) {
+                            IconButton(onClick = { showSettings = true }) {
+                                Icon(Icons.Default.Settings, contentDescription = null, tint = CheeseBrown)
+                            }
+                        }
+                    },
+                    actions = {
+                        // НОВОЕ: Скрываем флаг выбывания во время любых анимаций
+                        if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null) {
+                            IconButton(onClick = { showEliminateDialog = true }) {
+                                Icon(Icons.Default.Flag, contentDescription = null, tint = CheeseBrown)
+                            }
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = CheeseBackground)
                 )
             },
             containerColor = CheeseBackground
         ) { innerPadding ->
-            // НОВОЕ: Обертка для получения размеров экрана и отрисовки частиц
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -257,7 +295,7 @@ fun GameScreen(
                         screenHeight = it.height.toFloat()
                     }
             ) {
-                // Холст с эффектами (Рисуется под рулеткой)
+                // Холст с эффектами
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     frameTrigger // Привязка для рекомпозиции
                     particles.forEach { p ->
@@ -273,7 +311,7 @@ fun GameScreen(
                                     lineTo(-p.size * 0.866f, p.size * 0.5f)
                                     close()
                                 }
-                                drawPath(path, p.color.copy(alpha = alpha * 0.7f)) // Чуть прозрачные на фоне
+                                drawPath(path, p.color.copy(alpha = alpha * 0.7f))
                             }
                         } else {
                             drawCircle(p.color.copy(alpha = alpha), radius = p.size * alpha, center = Offset(p.x, p.y))
@@ -295,7 +333,10 @@ fun GameScreen(
                         currentEffect = currentAnimEffect,
                         eliminationProgress = eliminationProgress.value,
                         onSectorLongClick = { player ->
-                            if (spinState != SpinState.SPINNING && spinState != SpinState.FAKE_STOP && players.size > 1) { playerToDelete = player }
+                            // НОВОЕ: Жесткая блокировка удаления через лонг-клик во время любых анимаций!
+                            if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null && players.size > 1) {
+                                playerToDelete = player
+                            }
                         }
                     ) {
                         val buttonRotation = when (spinAnimationMode) {
