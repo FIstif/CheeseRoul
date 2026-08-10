@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -72,6 +73,10 @@ fun GameScreen(
     val eliminationEffect by viewModel.eliminationEffect.collectAsState()
     val spinAnimationMode by viewModel.spinAnimationMode.collectAsState()
 
+    // НОВОЕ: Стейты статистики
+    val totalSpins by viewModel.totalSpins.collectAsState()
+    val fakeStopsCount by viewModel.fakeStopsCount.collectAsState()
+
     val rotationAngle = remember { Animatable(0f) }
     var highlightedIndex by remember { mutableIntStateOf(0) }
     var spinState by remember { mutableStateOf(SpinState.IDLE) }
@@ -93,7 +98,7 @@ fun GameScreen(
 
     DisposableEffect(Unit) { onDispose { soundManager.release() } }
 
-    // Движок частиц (Крутится 60 FPS, когда нужно)
+    // Движок частиц
     LaunchedEffect(spinState, players.size) {
         var lastTime = withFrameNanos { it }
         while (true) {
@@ -102,7 +107,6 @@ fun GameScreen(
                 lastTime = time
                 var needsUpdate = false
 
-                // Фоновый сырный дождь (падают редко)
                 if (Random.nextFloat() < 0.015f) {
                     particles.add(
                         Particle(
@@ -116,10 +120,8 @@ fun GameScreen(
                     needsUpdate = true
                 }
 
-                // Искры при вращении колеса
                 if (spinState == SpinState.SPINNING || spinState == SpinState.FAKE_STOP) {
                     repeat(3) {
-                        // Раскидываем искры из центра
                         val angle = Random.nextFloat() * PI * 2
                         val speed = Random.nextFloat() * 600f + 200f
                         particles.add(
@@ -135,7 +137,6 @@ fun GameScreen(
                     needsUpdate = true
                 }
 
-                // Физика частиц
                 if (particles.isNotEmpty()) {
                     val iter = particles.iterator()
                     while (iter.hasNext()) {
@@ -146,7 +147,7 @@ fun GameScreen(
                         } else {
                             p.x += p.vx * dt
                             p.y += p.vy * dt
-                            p.vy += if (p.isCheese) 50f * dt else 600f * dt // Гравитация (искры падают быстрее)
+                            p.vy += if (p.isCheese) 50f * dt else 600f * dt
                             p.rotation += p.rotSpeed * dt
                         }
                     }
@@ -188,7 +189,6 @@ fun GameScreen(
                 eliminationProgress.snapTo(0f)
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateWin()
-                // Увеличили время анимации для зрелищности
                 eliminationProgress.animateTo(1f, animationSpec = tween(1200, easing = FastOutSlowInEasing))
                 viewModel.removePlayer(targetPlayer)
                 animatingPlayer = null
@@ -214,29 +214,27 @@ fun GameScreen(
             val exactTargetAngle = currentBase + (spins * 360f) + (finalIndex * sectorAngle)
             val targetRotation = if (exactTargetAngle <= rotationAngle.value) exactTargetAngle + 360f else exactTargetAngle
 
-            if (isFakeStopEnabled && Random.nextFloat() <= fakeStopChance) {
-                // НОВОЕ: Выбираем абсолютно любую другую ячейку для ложной остановки
-                // coerceAtLeast(2) страхует нас от краша, если вдруг остался 1 игрок
+            // НОВОЕ: Запоминаем, был ли перескок
+            val isFake = isFakeStopEnabled && Random.nextFloat() <= fakeStopChance
+
+            if (isFake) {
                 val maxOffset = max(2, players.size)
                 val randomOffset = Random.nextInt(1, maxOffset)
                 val fakeIndex = (finalIndex + randomOffset) % players.size
 
-                // Считаем угол до фейковой ячейки
                 val fakeExactTarget = currentBase + (spins * 360f) + (fakeIndex * sectorAngle)
                 val fakeTargetRotation = if (fakeExactTarget <= rotationAngle.value) fakeExactTarget + 360f else fakeExactTarget
 
-                // Крутим до фейковой ячейки
                 rotationAngle.animateTo(
                     targetValue = fakeTargetRotation,
                     animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f))
                 )
                 spinState = SpinState.FAKE_STOP
-                delay(600) // Пауза для интриги
+                delay(600)
 
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateJump()
 
-                // Вычисляем путь до реального победителя и делаем резкий прыжок
                 val distanceToCorrect = ((finalIndex - fakeIndex + players.size) % players.size) * sectorAngle
                 val finalJumpTarget = fakeTargetRotation + distanceToCorrect
 
@@ -255,6 +253,10 @@ fun GameScreen(
             isHardSpinning = false
             val winner = players[highlightedIndex]
             viewModel.recordSpinResult(winner.id)
+
+            // НОВОЕ: Записываем статистику вращения
+            viewModel.recordSpin(wasFakeStop = isFake)
+
             if (isSoundEnabled) soundManager.playWin()
             if (isVibrationEnabled) vibrationManager.vibrateWin()
         }
@@ -266,7 +268,6 @@ fun GameScreen(
                 TopAppBar(
                     title = {},
                     navigationIcon = {
-                        // НОВОЕ: Скрываем настройки во время любых анимаций и вращений
                         if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null) {
                             IconButton(onClick = { showSettings = true }) {
                                 Icon(Icons.Default.Settings, contentDescription = null, tint = CheeseBrown)
@@ -274,7 +275,6 @@ fun GameScreen(
                         }
                     },
                     actions = {
-                        // НОВОЕ: Скрываем флаг выбывания во время любых анимаций
                         if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null) {
                             IconButton(onClick = { showEliminateDialog = true }) {
                                 Icon(Icons.Default.Flag, contentDescription = null, tint = CheeseBrown)
@@ -295,9 +295,8 @@ fun GameScreen(
                         screenHeight = it.height.toFloat()
                     }
             ) {
-                // Холст с эффектами
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    frameTrigger // Привязка для рекомпозиции
+                    frameTrigger
                     particles.forEach { p ->
                         val alpha = (p.life / p.maxLife).coerceIn(0f, 1f)
                         if (p.isCheese) {
@@ -319,7 +318,6 @@ fun GameScreen(
                     }
                 }
 
-                // Основной интерфейс
                 Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -333,7 +331,6 @@ fun GameScreen(
                         currentEffect = currentAnimEffect,
                         eliminationProgress = eliminationProgress.value,
                         onSectorLongClick = { player ->
-                            // НОВОЕ: Жесткая блокировка удаления через лонг-клик во время любых анимаций!
                             if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null && players.size > 1) {
                                 playerToDelete = player
                             }
@@ -350,6 +347,13 @@ fun GameScreen(
                             modifier = Modifier.rotate(buttonRotation)
                         )
                     }
+
+                    // НОВОЕ: Панель статистики
+                    FakeStopStatsBanner(
+                        totalSpins = totalSpins,
+                        fakeStopsCount = fakeStopsCount,
+                        onReset = { viewModel.resetFakeStopStats() }
+                    )
 
                     Box(modifier = Modifier.height(100.dp), contentAlignment = Alignment.Center) {
                         this@Column.AnimatedVisibility(
@@ -428,6 +432,39 @@ fun GameScreen(
                 onPlayerEliminated = { player -> showEliminateDialog = false; triggerElimination(player) },
                 onPlayerRestored = { player -> showEliminateDialog = false; viewModel.restorePlayer(player) },
                 onDismiss = { showEliminateDialog = false }
+            )
+        }
+    }
+}
+
+// НОВОЕ: Компонент для красивого отображения статистики
+@Composable
+fun FakeStopStatsBanner(totalSpins: Int, fakeStopsCount: Int, onReset: () -> Unit) {
+    val percent = if (totalSpins > 0) (fakeStopsCount * 100) / totalSpins else 0
+    Row(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .background(Color.Black.copy(alpha = 0.3f), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "Запусков: $totalSpins | Рандом: $fakeStopsCount ($percent%)",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        IconButton(
+            onClick = onReset,
+            modifier = Modifier.size(24.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Сбросить статистику",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
             )
         }
     }

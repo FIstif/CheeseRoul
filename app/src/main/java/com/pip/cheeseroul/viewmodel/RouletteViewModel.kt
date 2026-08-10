@@ -47,7 +47,6 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private val _fakeStopChance = MutableStateFlow(0.5f)
     val fakeStopChance: StateFlow<Float> = _fakeStopChance.asStateFlow()
 
-    // НОВОЕ: По умолчанию теперь стоит случайный эффект!
     private val _eliminationEffect = MutableStateFlow(EliminationEffect.RANDOM)
     val eliminationEffect: StateFlow<EliminationEffect> = _eliminationEffect.asStateFlow()
 
@@ -56,6 +55,13 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
 
     private val _gameHistory = MutableStateFlow<List<GameStat>>(emptyList())
     val gameHistory: StateFlow<List<GameStat>> = _gameHistory.asStateFlow()
+
+    // НОВОЕ: Стейты для статистики ложных срабатываний
+    private val _totalSpins = MutableStateFlow(0)
+    val totalSpins: StateFlow<Int> = _totalSpins.asStateFlow()
+
+    private val _fakeStopsCount = MutableStateFlow(0)
+    val fakeStopsCount: StateFlow<Int> = _fakeStopsCount.asStateFlow()
 
     private var initialPlayersSnapshot = emptyList<Player>()
     private var currentSessionStartTime = 0L
@@ -118,6 +124,20 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun recordSpinResult(playerId: Int) { currentSpinCounts[playerId] = (currentSpinCounts[playerId] ?: 0) + 1 }
+
+    // НОВОЕ: Учет статистики каждого вращения
+    fun recordSpin(wasFakeStop: Boolean) {
+        _totalSpins.value++
+        if (wasFakeStop) {
+            _fakeStopsCount.value++
+        }
+    }
+
+    // НОВОЕ: Сброс статистики
+    fun resetFakeStopStats() {
+        _totalSpins.value = 0
+        _fakeStopsCount.value = 0
+    }
 
     fun removePlayer(player: Player) {
         val updated = _players.value.filter { it.id != player.id }
