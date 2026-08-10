@@ -89,6 +89,13 @@ fun GameScreen(
     val soundManager = remember { SoundManager(context) }
     val vibrationManager = remember { VibrationManager(context) }
     val coroutineScope = rememberCoroutineScope()
+    val spinDuration by viewModel.spinDuration.collectAsState()
+    val fakeStopDuration by viewModel.fakeStopDuration.collectAsState()
+    val fakeJumpDuration by viewModel.fakeJumpDuration.collectAsState()
+    val easingFactor by viewModel.easingFactor.collectAsState()
+    val fakeStopsCountDebug by viewModel.fakeStopsCountDebug.collectAsState()
+    val soundVolume by viewModel.soundVolume.collectAsState()
+    val vibrationStrength by viewModel.vibrationStrength.collectAsState()
 
     // Для генератора частиц
     var screenWidth by remember { mutableFloatStateOf(1000f) }
@@ -110,10 +117,16 @@ fun GameScreen(
                 if (Random.nextFloat() < 0.015f) {
                     particles.add(
                         Particle(
-                            x = Random.nextFloat() * screenWidth, y = -100f,
-                            vx = Random.nextFloat() * 100f - 50f, vy = Random.nextFloat() * 100f + 100f,
-                            life = 15f, maxLife = 15f, isCheese = true, color = CheeseYellow,
-                            rotation = Random.nextFloat() * 360f, rotSpeed = Random.nextFloat() * 200f - 100f,
+                            x = Random.nextFloat() * screenWidth,
+                            y = -100f,
+                            vx = Random.nextFloat() * 100f - 50f,
+                            vy = Random.nextFloat() * 100f + 100f,
+                            life = 15f,
+                            maxLife = 15f,
+                            isCheese = true,
+                            color = CheeseYellow,
+                            rotation = Random.nextFloat() * 360f,
+                            rotSpeed = Random.nextFloat() * 200f - 100f,
                             size = Random.nextFloat() * 25f + 15f
                         )
                     )
@@ -126,11 +139,17 @@ fun GameScreen(
                         val speed = Random.nextFloat() * 600f + 200f
                         particles.add(
                             Particle(
-                                x = screenWidth / 2f, y = screenHeight / 2f,
-                                vx = (cos(angle) * speed).toFloat(), vy = (sin(angle) * speed).toFloat(),
-                                life = Random.nextFloat() * 0.4f + 0.2f, maxLife = 0.6f, isCheese = false,
+                                x = screenWidth / 2f,
+                                y = screenHeight / 2f,
+                                vx = (cos(angle) * speed).toFloat(),
+                                vy = (sin(angle) * speed).toFloat(),
+                                life = Random.nextFloat() * 0.4f + 0.2f,
+                                maxLife = 0.6f,
+                                isCheese = false,
                                 color = listOf(CheeseYellow, CheeseOrange, Color.White).random(),
-                                rotation = 0f, rotSpeed = 0f, size = Random.nextFloat() * 12f + 4f
+                                rotation = 0f,
+                                rotSpeed = 0f,
+                                size = Random.nextFloat() * 12f + 4f
                             )
                         )
                     }
@@ -177,8 +196,15 @@ fun GameScreen(
     fun triggerElimination(targetPlayer: Player) {
         coroutineScope.launch {
             val resolvedEffect = if (eliminationEffect == EliminationEffect.RANDOM) {
-                listOf(EliminationEffect.EXPLOSION, EliminationEffect.FADE, EliminationEffect.SHRINK, EliminationEffect.FLY_AWAY).random()
-            } else { eliminationEffect }
+                listOf(
+                    EliminationEffect.EXPLOSION,
+                    EliminationEffect.FADE,
+                    EliminationEffect.SHRINK,
+                    EliminationEffect.FLY_AWAY
+                ).random()
+            } else {
+                eliminationEffect
+            }
 
             if (resolvedEffect == EliminationEffect.NONE) {
                 viewModel.removePlayer(targetPlayer)
@@ -189,7 +215,10 @@ fun GameScreen(
                 eliminationProgress.snapTo(0f)
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateWin()
-                eliminationProgress.animateTo(1f, animationSpec = tween(1200, easing = FastOutSlowInEasing))
+                eliminationProgress.animateTo(
+                    1f,
+                    animationSpec = tween(1200, easing = FastOutSlowInEasing)
+                )
                 viewModel.removePlayer(targetPlayer)
                 animatingPlayer = null
                 spinState = SpinState.IDLE
@@ -206,46 +235,60 @@ fun GameScreen(
         isHardSpinning = isHard
         spinJob = coroutineScope.launch {
             spinState = SpinState.SPINNING
-            val duration = if (isHard) Random.nextInt(7500, 10000) else Random.nextInt(5000, 7500)
+            // ИСПОЛЬЗУЕМ НАСТРОЙКУ ПОЛЗУНКА (переводим секунды в миллисекунды)
+            val duration = (spinDuration * 1000).toInt()
             val spins = if (isHard) Random.nextInt(20, 30) else Random.nextInt(10, 15)
             val sectorAngle = 360f / players.size
             val finalIndex = Random.nextInt(players.size)
             val currentBase = rotationAngle.value - (rotationAngle.value % 360f)
             val exactTargetAngle = currentBase + (spins * 360f) + (finalIndex * sectorAngle)
-            val targetRotation = if (exactTargetAngle <= rotationAngle.value) exactTargetAngle + 360f else exactTargetAngle
+            val targetRotation =
+                if (exactTargetAngle <= rotationAngle.value) exactTargetAngle + 360f else exactTargetAngle
 
-            // НОВОЕ: Запоминаем, был ли перескок
             val isFake = isFakeStopEnabled && Random.nextFloat() <= fakeStopChance
 
+            // ИСПОЛЬЗУЕМ НАСТРОЙКУ КРИВОЙ (Easing)
+            // easingFactor от 0 до 1. 0 - плавно, 1 - очень резко в конце
+            val customEasing = CubicBezierEasing(0.1f, 1f - easingFactor, 0.2f, 1f)
+
             if (isFake) {
+                // ИСПОЛЬЗУЕМ НАСТРОЙКУ КОЛИЧЕСТВА ФЕЙКОВ (для простоты пока делаем 1 фейк, но учитываем скорость)
                 val maxOffset = max(2, players.size)
                 val randomOffset = Random.nextInt(1, maxOffset)
                 val fakeIndex = (finalIndex + randomOffset) % players.size
 
                 val fakeExactTarget = currentBase + (spins * 360f) + (fakeIndex * sectorAngle)
-                val fakeTargetRotation = if (fakeExactTarget <= rotationAngle.value) fakeExactTarget + 360f else fakeExactTarget
+                val fakeTargetRotation =
+                    if (fakeExactTarget <= rotationAngle.value) fakeExactTarget + 360f else fakeExactTarget
 
                 rotationAngle.animateTo(
                     targetValue = fakeTargetRotation,
-                    animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f))
+                    animationSpec = tween(duration, easing = customEasing)
                 )
                 spinState = SpinState.FAKE_STOP
-                delay(600)
+
+                // ИСПОЛЬЗУЕМ НАСТРОЙКУ ПАУЗЫ ФЕЙК-ОСТАНОВКИ
+                delay((fakeStopDuration * 1000).toLong())
 
                 if (isSoundEnabled) soundManager.playJump()
                 if (isVibrationEnabled) vibrationManager.vibrateJump()
 
-                val distanceToCorrect = ((finalIndex - fakeIndex + players.size) % players.size) * sectorAngle
+                val distanceToCorrect =
+                    ((finalIndex - fakeIndex + players.size) % players.size) * sectorAngle
                 val finalJumpTarget = fakeTargetRotation + distanceToCorrect
 
+                // ИСПОЛЬЗУЕМ НАСТРОЙКУ СКОРОСТИ ПРЫЖКА
                 rotationAngle.animateTo(
                     targetValue = finalJumpTarget,
-                    animationSpec = tween(800, easing = FastOutSlowInEasing)
+                    animationSpec = tween(
+                        (fakeJumpDuration * 1000).toInt(),
+                        easing = FastOutSlowInEasing
+                    )
                 )
             } else {
                 rotationAngle.animateTo(
                     targetValue = targetRotation,
-                    animationSpec = tween(duration, easing = CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f))
+                    animationSpec = tween(duration, easing = customEasing)
                 )
             }
 
@@ -253,8 +296,6 @@ fun GameScreen(
             isHardSpinning = false
             val winner = players[highlightedIndex]
             viewModel.recordSpinResult(winner.id)
-
-            // НОВОЕ: Записываем статистику вращения
             viewModel.recordSpin(wasFakeStop = isFake)
 
             if (isSoundEnabled) soundManager.playWin()
@@ -270,14 +311,22 @@ fun GameScreen(
                     navigationIcon = {
                         if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null) {
                             IconButton(onClick = { showSettings = true }) {
-                                Icon(Icons.Default.Settings, contentDescription = null, tint = CheeseBrown)
+                                Icon(
+                                    Icons.Default.Settings,
+                                    contentDescription = null,
+                                    tint = CheeseBrown
+                                )
                             }
                         }
                     },
                     actions = {
                         if ((spinState == SpinState.IDLE || spinState == SpinState.STOPPED) && animatingPlayer == null) {
                             IconButton(onClick = { showEliminateDialog = true }) {
-                                Icon(Icons.Default.Flag, contentDescription = null, tint = CheeseBrown)
+                                Icon(
+                                    Icons.Default.Flag,
+                                    contentDescription = null,
+                                    tint = CheeseBrown
+                                )
                             }
                         }
                     },
@@ -313,12 +362,20 @@ fun GameScreen(
                                 drawPath(path, p.color.copy(alpha = alpha * 0.7f))
                             }
                         } else {
-                            drawCircle(p.color.copy(alpha = alpha), radius = p.size * alpha, center = Offset(p.x, p.y))
+                            drawCircle(
+                                p.color.copy(alpha = alpha),
+                                radius = p.size * alpha,
+                                center = Offset(p.x, p.y)
+                            )
                         }
                     }
                 }
 
-                Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     RouletteWheel(
@@ -358,41 +415,111 @@ fun GameScreen(
                     Box(modifier = Modifier.height(100.dp), contentAlignment = Alignment.Center) {
                         this@Column.AnimatedVisibility(
                             visible = spinState == SpinState.STOPPED && highlightedIndex in players.indices && players.size > 1,
-                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-                        ) { ResultBanner(player = players[highlightedIndex], displayMode = displayMode) }
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                        ) {
+                            ResultBanner(
+                                player = players[highlightedIndex],
+                                displayMode = displayMode
+                            )
+                        }
                     }
                 }
 
-                AnimatedVisibility(visible = playerToDelete != null, enter = fadeIn(), exit = fadeOut()) {
-                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f)).clickable { playerToDelete = null }, contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                            Text("Исключить из игры?", color = Color.White.copy(alpha = 0.7f), fontSize = 18.sp)
+                AnimatedVisibility(
+                    visible = playerToDelete != null,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.85f))
+                            .clickable { playerToDelete = null },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                "Исключить из игры?",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 18.sp
+                            )
                             Spacer(modifier = Modifier.height(16.dp))
-                            Box(modifier = Modifier.size(80.dp).background(playerToDelete?.color ?: Color.Gray, androidx.compose.foundation.shape.CircleShape))
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .background(
+                                        playerToDelete?.color ?: Color.Gray,
+                                        androidx.compose.foundation.shape.CircleShape
+                                    )
+                            )
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(playerToDelete?.name?.ifBlank { "Игрок ${playerToDelete!!.id}" } ?: "", color = playerToDelete?.color ?: Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            Text(playerToDelete?.name?.ifBlank { "Игрок ${playerToDelete!!.id}" }
+                                ?: "",
+                                color = playerToDelete?.color ?: Color.White,
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(48.dp))
                             Button(
-                                onClick = { val target = playerToDelete!!; playerToDelete = null; triggerElimination(target) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-                                modifier = Modifier.height(56.dp).padding(horizontal = 32.dp)
+                                onClick = {
+                                    val target = playerToDelete!!; playerToDelete =
+                                    null; triggerElimination(target)
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(
+                                        0xFFD32F2F
+                                    )
+                                ),
+                                modifier = Modifier
+                                    .height(56.dp)
+                                    .padding(horizontal = 32.dp)
                             ) {
-                                Icon(Icons.Default.Delete, contentDescription = null, tint = Color.White)
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = Color.White
+                                )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Да, выбыл!", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Да, выбыл!",
+                                    color = Color.White,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             Spacer(modifier = Modifier.height(24.dp))
-                            TextButton(onClick = { playerToDelete = null }) { Text("Отмена", color = Color.Gray, fontSize = 16.sp) }
+                            TextButton(onClick = { playerToDelete = null }) {
+                                Text(
+                                    "Отмена",
+                                    color = Color.Gray,
+                                    fontSize = 16.sp
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        AnimatedVisibility(visible = players.size == 1 && animatingPlayer == null, enter = scaleIn(initialScale = 0.8f) + fadeIn(tween(500)), exit = fadeOut(tween(300))) {
+        AnimatedVisibility(
+            visible = players.size == 1 && animatingPlayer == null,
+            enter = scaleIn(initialScale = 0.8f) + fadeIn(tween(500)),
+            exit = fadeOut(tween(300))
+        ) {
             val finalWinner = remember { players.firstOrNull() } ?: return@AnimatedVisibility
             val infiniteTransition = rememberInfiniteTransition(label = "winPulse")
-            val scale by infiniteTransition.animateFloat(initialValue = 1f, targetValue = 1.15f, animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "winScale")
+            val scale by infiniteTransition.animateFloat(
+                initialValue = 1f,
+                targetValue = 1.15f,
+                animationSpec = infiniteRepeatable(
+                    tween(600, easing = FastOutSlowInEasing),
+                    RepeatMode.Reverse
+                ),
+                label = "winScale"
+            )
 
             LaunchedEffect(Unit) {
                 if (isSoundEnabled) soundManager.playWin()
@@ -402,11 +529,28 @@ fun GameScreen(
                 onBackToMenu()
             }
 
-            Box(modifier = Modifier.fillMaxSize().background(finalWinner.color).pointerInput(Unit) { detectTapGestures { } }, contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(finalWinner.color)
+                    .pointerInput(Unit) { detectTapGestures { } },
+                contentAlignment = Alignment.Center
+            ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🎉 ПОБЕДИТЕЛЬ 🎉", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(
+                        "🎉 ПОБЕДИТЕЛЬ 🎉",
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                     Spacer(modifier = Modifier.height(24.dp))
-                    Text(finalWinner.name.ifBlank { "Игрок ${finalWinner.id}" }, fontSize = 48.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.scale(scale))
+                    Text(
+                        finalWinner.name.ifBlank { "Игрок ${finalWinner.id}" },
+                        fontSize = 48.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.scale(scale)
+                    )
                     Spacer(modifier = Modifier.height(32.dp))
                     Text("Игра окончена", fontSize = 18.sp, color = Color.White.copy(alpha = 0.8f))
                 }
@@ -416,12 +560,27 @@ fun GameScreen(
         if (showSettings) {
             SettingsModal(
                 isSoundEnabled = isSoundEnabled, isVibrationEnabled = isVibrationEnabled, displayMode = displayMode,
-                isFakeStopEnabled = isFakeStopEnabled, fakeStopChance = fakeStopChance, eliminationEffect = eliminationEffect,
-                spinAnimationMode = spinAnimationMode,
+                isFakeStopEnabled = isFakeStopEnabled, spinAnimationMode = spinAnimationMode, eliminationEffect = eliminationEffect,
+
+                // Передаем новые стейты
+                fakeStopChance = fakeStopChance, spinDuration = spinDuration, fakeStopDuration = fakeStopDuration,
+                fakeJumpDuration = fakeJumpDuration, easingFactor = easingFactor, fakeStopsCountDebug = fakeStopsCountDebug,
+                soundVolume = soundVolume, vibrationStrength = vibrationStrength,
+
                 onSoundToggle = { viewModel.setSoundEnabled(it) }, onVibrationToggle = { viewModel.setVibrationEnabled(it) },
-                onFakeStopToggle = { viewModel.setFakeStopEnabled(it) }, onChanceChange = { viewModel.setFakeStopChance(it) },
-                onModeSelect = { viewModel.setDisplayMode(it) }, onEffectSelect = { viewModel.setEliminationEffect(it) },
-                onSpinModeSelect = { viewModel.setSpinAnimationMode(it) },
+                onFakeStopToggle = { viewModel.setFakeStopEnabled(it) }, onModeSelect = { viewModel.setDisplayMode(it) },
+                onEffectSelect = { viewModel.setEliminationEffect(it) }, onSpinModeSelect = { viewModel.setSpinAnimationMode(it) },
+
+                // Передаем коллбэки
+                onChanceChange = { viewModel.setFakeStopChance(it) },
+                onSpinDurationChange = { viewModel.setSpinDuration(it) },
+                onFakeStopDurationChange = { viewModel.setFakeStopDuration(it) },
+                onFakeJumpDurationChange = { viewModel.setFakeJumpDuration(it) },
+                onEasingFactorChange = { viewModel.setEasingFactor(it) },
+                onFakeStopsCountDebugChange = { viewModel.setFakeStopsCountDebug(it) },
+                onSoundVolumeChange = { viewModel.setSoundVolume(it) },
+                onVibrationStrengthChange = { viewModel.setVibrationStrength(it) },
+
                 onExitToMenu = { showSettings = false; viewModel.restorePlayersAfterGame(); onBackToMenu() }, onDismiss = { showSettings = false }
             )
         }
@@ -429,8 +588,16 @@ fun GameScreen(
         if (showEliminateDialog) {
             EliminateDialog(
                 players = players, eliminatedPlayers = eliminatedPlayers,
-                onPlayerEliminated = { player -> showEliminateDialog = false; triggerElimination(player) },
-                onPlayerRestored = { player -> showEliminateDialog = false; viewModel.restorePlayer(player) },
+                onPlayerEliminated = { player ->
+                    showEliminateDialog = false; triggerElimination(
+                    player
+                )
+                },
+                onPlayerRestored = { player ->
+                    showEliminateDialog = false; viewModel.restorePlayer(
+                    player
+                )
+                },
                 onDismiss = { showEliminateDialog = false }
             )
         }
@@ -444,7 +611,10 @@ fun FakeStopStatsBanner(totalSpins: Int, fakeStopsCount: Int, onReset: () -> Uni
     Row(
         modifier = Modifier
             .padding(horizontal = 16.dp)
-            .background(Color.Black.copy(alpha = 0.3f), androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+            .background(
+                Color.Black.copy(alpha = 0.3f),
+                androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+            )
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center

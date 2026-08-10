@@ -44,8 +44,31 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private val _isFakeStopEnabled = MutableStateFlow(true)
     val isFakeStopEnabled: StateFlow<Boolean> = _isFakeStopEnabled.asStateFlow()
 
+    // --- НОВЫЕ ПЕРЕМЕННЫЕ ОТЛАДКИ АНИМАЦИИ (ЭТАП 3) ---
     private val _fakeStopChance = MutableStateFlow(0.5f)
     val fakeStopChance: StateFlow<Float> = _fakeStopChance.asStateFlow()
+
+    private val _spinDuration = MutableStateFlow(6.0f) // Длительность вращения (в секундах)
+    val spinDuration: StateFlow<Float> = _spinDuration.asStateFlow()
+
+    private val _fakeStopDuration = MutableStateFlow(0.8f) // Длительность фейк-остановки (в секундах)
+    val fakeStopDuration: StateFlow<Float> = _fakeStopDuration.asStateFlow()
+
+    private val _fakeJumpDuration = MutableStateFlow(0.5f) // Длительность прыжка (в секундах)
+    val fakeJumpDuration: StateFlow<Float> = _fakeJumpDuration.asStateFlow()
+
+    private val _easingFactor = MutableStateFlow(0.2f) // Плавность замедления (0.0 - 1.0)
+    val easingFactor: StateFlow<Float> = _easingFactor.asStateFlow()
+
+    private val _fakeStopsCountDebug = MutableStateFlow(1f) // Кол-во фейковых остановок (1-3)
+    val fakeStopsCountDebug: StateFlow<Float> = _fakeStopsCountDebug.asStateFlow()
+
+    private val _soundVolume = MutableStateFlow(1.0f) // Громкость звука
+    val soundVolume: StateFlow<Float> = _soundVolume.asStateFlow()
+
+    private val _vibrationStrength = MutableStateFlow(1.0f) // Сила вибрации
+    val vibrationStrength: StateFlow<Float> = _vibrationStrength.asStateFlow()
+    // --------------------------------------------------
 
     private val _eliminationEffect = MutableStateFlow(EliminationEffect.RANDOM)
     val eliminationEffect: StateFlow<EliminationEffect> = _eliminationEffect.asStateFlow()
@@ -56,7 +79,6 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     private val _gameHistory = MutableStateFlow<List<GameStat>>(emptyList())
     val gameHistory: StateFlow<List<GameStat>> = _gameHistory.asStateFlow()
 
-    // НОВОЕ: Стейты для статистики ложных срабатываний
     private val _totalSpins = MutableStateFlow(0)
     val totalSpins: StateFlow<Int> = _totalSpins.asStateFlow()
 
@@ -111,9 +133,18 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
     fun setSoundEnabled(enabled: Boolean) { _isSoundEnabled.value = enabled }
     fun setVibrationEnabled(enabled: Boolean) { _isVibrationEnabled.value = enabled }
     fun setFakeStopEnabled(enabled: Boolean) { _isFakeStopEnabled.value = enabled }
-    fun setFakeStopChance(chance: Float) { _fakeStopChance.value = chance }
     fun setEliminationEffect(effect: EliminationEffect) { _eliminationEffect.value = effect }
     fun setSpinAnimationMode(mode: SpinAnimationMode) { _spinAnimationMode.value = mode }
+
+    // Сеттеры отладки
+    fun setFakeStopChance(chance: Float) { _fakeStopChance.value = chance }
+    fun setSpinDuration(value: Float) { _spinDuration.value = value }
+    fun setFakeStopDuration(value: Float) { _fakeStopDuration.value = value }
+    fun setFakeJumpDuration(value: Float) { _fakeJumpDuration.value = value }
+    fun setEasingFactor(value: Float) { _easingFactor.value = value }
+    fun setFakeStopsCountDebug(value: Float) { _fakeStopsCountDebug.value = value }
+    fun setSoundVolume(value: Float) { _soundVolume.value = value }
+    fun setVibrationStrength(value: Float) { _vibrationStrength.value = value }
 
     fun startGameSession() {
         initialPlayersSnapshot = _players.value
@@ -125,7 +156,6 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
 
     fun recordSpinResult(playerId: Int) { currentSpinCounts[playerId] = (currentSpinCounts[playerId] ?: 0) + 1 }
 
-    // НОВОЕ: Учет статистики каждого вращения
     fun recordSpin(wasFakeStop: Boolean) {
         _totalSpins.value++
         if (wasFakeStop) {
@@ -133,7 +163,6 @@ class RouletteViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // НОВОЕ: Сброс статистики
     fun resetFakeStopStats() {
         _totalSpins.value = 0
         _fakeStopsCount.value = 0
