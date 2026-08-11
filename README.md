@@ -10,8 +10,8 @@
 
 ### 📥 Скачать приложение
 
-[![Скачать Release](https://img.shields.io/badge/Скачать_Release-Stable_Build-success?style=for-the-badge&logo=android)](https://github.com/FIstif/CheeseRoul/releases/latest)
-[![Скачать Beta](https://img.shields.io/badge/Скачать_Beta-Debug_Build-red?style=for-the-badge&logo=android)](https://github.com/FIstif/CheeseRoul/actions)
+[![Скачать Release](https://img.shields.io/badge/Скачать_Release-Stable_Build-success?style=for-the-badge&logo=android)]([https://github.com/FIstif/CheeseRoul/releases/latest](https://github.com/FIstif/CheeseRoul/releases/download/latest/app-release.apk))
+[![Скачать Beta](https://img.shields.io/badge/Скачать_Beta-Debug_Build-red?style=for-the-badge&logo=android)]([https://github.com/FIstif/CheeseRoul/actions](https://github.com/FIstif/CheeseRoul/releases/download/beta/app-debug.apk))
 
 *🟩 **Release (Stable)** — стабильная версия игры. Нажмите, чтобы перейти к последнему официальному релизу.*
 *🟥 **Beta (Debug)** — тестовая версия с новейшими фичами. Нажмите, чтобы перейти в раздел Actions и скачать артефакт последней сборки ветки develop.*
